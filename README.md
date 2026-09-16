@@ -45,9 +45,13 @@ Deploy rule or index changes with `npm run deploy:rules`.
 
 ## Deploy to Netlify
 
-`netlify.toml` holds the build settings (`npm run build`, publish `dist/checkmate/browser`, Node 24), the single-page-app fallback to `index.html`, long-lived caching for hashed assets, and a `Cross-Origin-Opener-Policy: same-origin-allow-popups` header so the Google sign-in popup can report back. Connect the repo in Netlify or run `netlify deploy --prod`.
+`netlify.toml` holds the build settings (`npm run build`, publish `dist/checkmate/browser`, Node 24), the single-page-app fallback to `index.html`, long-lived caching for hashed assets (matched by `main-`/`chunk-`/`styles-` prefix so `ngsw-worker.js` and `ngsw.json` stay revalidated), and a `Cross-Origin-Opener-Policy: same-origin-allow-popups` header so the Google sign-in popup can report back. Connect the repo in Netlify or run `netlify deploy --prod`.
 
 Sign-in uses a popup on `checkmate-arcade-2xjdv.firebaseapp.com`, which works in browsers that block third-party storage. If you later switch to redirect sign-in, proxy `/__/auth/*` to the firebaseapp.com domain and set `authDomain` to the Netlify domain first.
+
+## Installable app (PWA)
+
+Production builds register the Angular service worker (`ngsw-config.json`) and ship `public/manifest.webmanifest` with icons in `public/icons`. The app shell and Google Fonts are cached so launches are instant; Firestore traffic always goes to the network. When a new deploy is detected, players get a "Refresh" toast instead of a forced reload, so a live match is never interrupted. The service worker is off in `npm start` and `npm run start:emulated`; test it with `npm run build` and any static server on `localhost`.
 
 ## Scripts
 

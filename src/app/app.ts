@@ -6,6 +6,7 @@ import { AuthService } from './core/auth/auth.service';
 import { FriendsService } from './core/friends/friends.service';
 import { PresenceService } from './core/presence/presence.service';
 import { ProfileService } from './core/profile/profile.service';
+import { AppUpdateService } from './core/pwa/app-update.service';
 import { RoomsService } from './core/rooms/rooms.service';
 import { ArcadeBackground } from './layout/arcade-background';
 import { Avatar } from './shared/ui/avatar';
@@ -28,6 +29,7 @@ export class App {
   protected readonly friends = inject(FriendsService);
   protected readonly rooms = inject(RoomsService);
   protected readonly presence = inject(PresenceService);
+  private readonly updates = inject(AppUpdateService);
   private readonly toasts = inject(ToastService);
   private readonly router = inject(Router);
 
@@ -47,6 +49,7 @@ export class App {
     this.routeAfterSignIn();
     this.announceFriendRequests();
     this.announceChallenges();
+    this.offerUpdates();
   }
 
   protected async signIn(): Promise<void> {
@@ -183,6 +186,41 @@ export class App {
           open.set(room.code, toastId);
         }
       });
+    });
+  }
+
+  /** Never reload on the player's behalf: a live match may be on screen. */
+  private offerUpdates(): void {
+    const refresh = { label: 'Refresh', run: () => this.updates.reload() };
+    effect(() => {
+      if (this.updates.ready()) {
+        untracked(() =>
+          this.toasts.show(
+            {
+              tone: 'info',
+              title: 'New version of Checkmate',
+              message: 'Refresh when you are ready to load it.',
+              actions: [refresh, { label: 'Later', style: 'ghost', run: () => undefined }],
+            },
+            null,
+          ),
+        );
+      }
+    });
+    effect(() => {
+      if (this.updates.broken()) {
+        untracked(() =>
+          this.toasts.show(
+            {
+              tone: 'error',
+              title: 'Checkmate needs a refresh',
+              message: 'Part of the app could not load. Refreshing fixes it.',
+              actions: [refresh],
+            },
+            null,
+          ),
+        );
+      }
     });
   }
 }

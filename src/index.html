@@ -10,15 +10,23 @@
       content="Live chess against your friends. Every match is on the big screen for anyone to watch."
     />
     <meta name="theme-color" content="#0a0612" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="apple-mobile-web-app-title" content="Checkmate" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- crossorigin lets the service worker cache this stylesheet for offline launches. -->
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Press+Start+2P&display=swap"
+      crossorigin
     />
   </head>
   <body>
     <app-root></app-root>
+    <noscript>Checkmate needs JavaScript to run. Turn it on and reload the page.</noscript>
   </body>
 </html>

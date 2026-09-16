@@ -6,7 +6,7 @@ import { Router, RouterLink } from '@angular/router';
   imports: [RouterLink],
   template: `
     <section
-      class="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-xl flex-col items-center justify-center px-4 text-center"
+      class="mx-auto flex min-h-[calc(100dvh-4rem-env(safe-area-inset-top))] max-w-xl flex-col items-center justify-center px-4 text-center"
     >
       <h1 class="pixel animate-pop-in text-3xl text-neon-pink glow-pink sm:text-5xl">GAME OVER</h1>
       <p class="mt-6 text-lg text-ink-dim">This page doesn't exist.</p>
