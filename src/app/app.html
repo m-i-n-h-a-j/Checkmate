@@ -1,0 +1,136 @@
+<a class="skip-link" href="#main">Skip to content</a>
+<app-arcade-background [mode]="isHome() ? 'hero' : 'calm'" />
+
+<header class="sticky top-0 z-40 border-b border-line/70 bg-void/75 backdrop-blur-md">
+  <nav class="mx-auto flex h-16 max-w-6xl items-center gap-2 px-4" aria-label="Main">
+    <a routerLink="/" class="mr-auto flex items-center gap-3" aria-label="Checkmate home">
+      <span class="text-3xl leading-none text-gold glow-gold" aria-hidden="true">♛</span>
+      <span class="pixel hidden text-[13px] text-gold glow-gold sm:inline">CHECKMATE</span>
+    </a>
+
+    <div class="hidden items-center gap-1 md:flex">
+      <a
+        routerLink="/"
+        routerLinkActive="is-active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        class="nav-link"
+      >
+        <app-icon name="watch" [size]="18" /> Watch
+      </a>
+      <a routerLink="/play" routerLinkActive="is-active" class="nav-link"
+        ><app-icon name="play" [size]="18" /> Play</a
+      >
+      <a routerLink="/friends" routerLinkActive="is-active" class="nav-link">
+        <app-icon name="friends" [size]="18" /> Friends
+        @if (requestCount()) {
+          <span class="badge" [attr.aria-label]="requestCount() + ' friend requests'">{{
+            requestCount()
+          }}</span>
+        }
+      </a>
+    </div>
+
+    <div class="relative ml-2">
+      @if (auth.user() === undefined) {
+        <span class="block size-10" aria-hidden="true"></span>
+      } @else if (auth.user()) {
+        <button
+          type="button"
+          class="flex items-center gap-2 rounded-xl p-1 transition-colors hover:bg-white/5"
+          aria-haspopup="menu"
+          [attr.aria-expanded]="menuOpen()"
+          aria-controls="player-menu"
+          (click)="menuOpen.set(!menuOpen())"
+        >
+          <app-avatar
+            [name]="profiles.profile()?.displayName ?? auth.user()?.displayName ?? 'Player'"
+            [photo]="profiles.profile()?.photoURL ?? auth.user()?.photoURL ?? null"
+            [size]="38"
+            ring="gold"
+          />
+          <span class="sr-only">Open player menu</span>
+        </button>
+        @if (menuOpen()) {
+          <div class="fixed inset-0 z-40" (click)="menuOpen.set(false)" aria-hidden="true"></div>
+          <div
+            id="player-menu"
+            role="menu"
+            class="panel panel-gold absolute right-0 z-50 mt-3 w-64 p-2"
+            animate.enter="fade-in"
+          >
+            <div class="px-3 pt-2 pb-3">
+              <p class="truncate font-semibold">{{ profiles.profile()?.displayName }}</p>
+              <p class="truncate text-sm text-ink-dim">
+                @if (profiles.profile()?.username; as username) {
+                  &#64;{{ username }}
+                } @else {
+                  No username yet
+                }
+              </p>
+            </div>
+            <a
+              routerLink="/profile"
+              role="menuitem"
+              class="nav-link w-full"
+              (click)="menuOpen.set(false)"
+            >
+              <app-icon name="user" [size]="18" /> Your player
+            </a>
+            <button type="button" role="menuitem" class="nav-link w-full" (click)="signOut()">
+              <app-icon name="logout" [size]="18" /> Sign out
+            </button>
+          </div>
+        }
+      } @else {
+        <button
+          type="button"
+          class="btn btn-pink btn-sm"
+          [disabled]="auth.signingIn()"
+          (click)="signIn()"
+        >
+          Sign in
+        </button>
+      }
+    </div>
+  </nav>
+</header>
+
+<main id="main" class="relative z-10 pb-28 md:pb-12">
+  <router-outlet />
+</main>
+
+<nav
+  class="fixed inset-x-0 bottom-0 z-40 border-t border-line/70 bg-void/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+  aria-label="Main"
+>
+  <div class="mx-auto grid max-w-md grid-cols-3">
+    <a
+      routerLink="/"
+      routerLinkActive="is-active"
+      [routerLinkActiveOptions]="{ exact: true }"
+      class="nav-link flex-col gap-1 py-3 text-xs"
+    >
+      <app-icon name="watch" /> Watch
+    </a>
+    <a routerLink="/play" routerLinkActive="is-active" class="nav-link flex-col gap-1 py-3 text-xs">
+      <app-icon name="play" /> Play
+    </a>
+    <a
+      routerLink="/friends"
+      routerLinkActive="is-active"
+      class="nav-link relative flex-col gap-1 py-3 text-xs"
+    >
+      <app-icon name="friends" /> Friends
+      @if (requestCount()) {
+        <span
+          class="badge absolute top-1.5 left-[55%]"
+          [attr.aria-label]="requestCount() + ' friend requests'"
+          >{{ requestCount() }}</span
+        >
+      }
+    </a>
+  </div>
+</nav>
+
+<app-toast-host />
+<div class="crt" aria-hidden="true"></div>

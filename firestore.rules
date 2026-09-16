@@ -1,0 +1,276 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Mirrors pairId() in src/app/core/util/ids.ts
+    function pairId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    function otherMember(members) {
+      return members[0] == request.auth.uid ? members[1] : members[0];
+    }
+
+    function validName(name) {
+      return name is string && name.size() >= 1 && name.size() <= 24;
+    }
+
+    function validPlayer(player, uid) {
+      return player is map
+        && player.keys().hasOnly(['uid', 'displayName', 'username', 'photoURL'])
+        && player.uid == uid
+        && validName(player.displayName)
+        && (player.username == null || player.username is string)
+        && (player.photoURL == null || (player.photoURL is string && player.photoURL.size() < 2048));
+    }
+
+    // ---------- players ----------
+    match /users/{uid} {
+      // Public so spectators can see who is playing.
+      allow read: if true;
+
+      allow create: if isSelf(uid)
+        && incoming().keys().hasOnly(['uid', 'displayName', 'username', 'photoURL', 'onboardingSeen', 'stats', 'createdAt', 'lastActive'])
+        && incoming().uid == uid
+        && validName(incoming().displayName)
+        && incoming().username == null
+        && (incoming().photoURL == null || (incoming().photoURL is string && incoming().photoURL.size() < 2048))
+        && incoming().onboardingSeen == false
+        && incoming().stats == { 'wins': 0, 'losses': 0, 'draws': 0, 'rating': 1200 }
+        && incoming().createdAt == request.time
+        && incoming().lastActive == request.time;
+
+      // Stats are never client-writable. A new username must be claimed in the same write.
+      allow update: if isSelf(uid)
+        && changed().hasOnly(['displayName', 'username', 'photoURL', 'onboardingSeen', 'lastActive'])
+        && validName(incoming().displayName)
+        && incoming().onboardingSeen is bool
+        && (!('lastActive' in changed()) || incoming().lastActive == request.time)
+        && (!('photoURL' in changed()) || incoming().photoURL == null || (incoming().photoURL is string && incoming().photoURL.size() < 2048))
+        && (!('username' in changed()) || (
+          incoming().username is string
+          && getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.uid == uid
+        ));
+    }
+
+    // Username registry: the document id is the username, so uniqueness is enforced by Firestore itself.
+    match /usernames/{name} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if signedIn()
+        && name.matches('^[a-z0-9_]{3,20}$')
+        && incoming().keys().hasOnly(['uid'])
+        && incoming().uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == name;
+
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username != name;
+    }
+
+    // Email lookup index. Fetch by exact email only; the collection can't be listed.
+    match /emails/{email} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create, update: if signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() == email
+        && incoming().keys().hasOnly(['uid'])
+        && incoming().uid == request.auth.uid;
+    }
+
+    // ---------- friends ----------
+    match /friendRequests/{id} {
+      allow get: if signedIn()
+        && (resource == null || resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow list: if signedIn()
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+
+      allow create: if signedIn()
+        && incoming().keys().hasOnly(['from', 'to', 'fromPlayer', 'toPlayer', 'createdAt'])
+        && incoming().from == request.auth.uid
+        && incoming().to is string
+        && incoming().to != request.auth.uid
+        && id == incoming().from + '_' + incoming().to
+        && validPlayer(incoming().fromPlayer, incoming().from)
+        && validPlayer(incoming().toPlayer, incoming().to)
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/users/$(incoming().to))
+        && !exists(/databases/$(database)/documents/friendships/$(pairId(incoming().from, incoming().to)));
+
+      // Declining and cancelling both delete. Requests are never edited.
+      allow delete: if signedIn()
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+    }
+
+    match /friendships/{id} {
+      allow get: if signedIn() && (resource == null || request.auth.uid in resource.data.members);
+      allow list: if signedIn() && request.auth.uid in resource.data.members;
+
+      // Only the recipient of a pending request can create the friendship.
+      allow create: if signedIn()
+        && incoming().keys().hasOnly(['members', 'createdAt'])
+        && incoming().members is list
+        && incoming().members.size() == 2
+        && request.auth.uid in incoming().members
+        && id == pairId(incoming().members[0], incoming().members[1])
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/friendRequests/$(otherMember(incoming().members) + '_' + request.auth.uid));
+
+      allow delete: if signedIn() && request.auth.uid in resource.data.members;
+    }
+
+    // ---------- rooms ----------
+    match /rooms/{code} {
+      function room() {
+        return resource.data;
+      }
+
+      function isHost() {
+        return signedIn() && room().hostUid == request.auth.uid;
+      }
+
+      function isGuest() {
+        return signedIn() && room().guestUid == request.auth.uid;
+      }
+
+      function waitingWithGuest() {
+        return room().status == 'waiting' && room().guestUid != null;
+      }
+
+      // Anyone with a code can look a room up. Listing is limited to live matches (public arena)
+      // and rooms you're part of, so open room codes can't be scraped.
+      allow get: if true;
+      allow list: if room().status == 'live'
+        || (signedIn() && (
+          room().hostUid == request.auth.uid
+          || room().guestUid == request.auth.uid
+          || room().invitedUid == request.auth.uid
+        ));
+
+      allow create: if signedIn()
+        && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && incoming().keys().hasOnly([
+          'code', 'type', 'status', 'hostUid', 'host', 'guestUid', 'guest', 'invitedUid', 'invited',
+          'friendshipId', 'hostReady', 'guestReady', 'createdAt', 'startedAt', 'endedAt', 'endedBy', 'expiresAt'
+        ])
+        && incoming().code == code
+        && incoming().status == 'waiting'
+        && incoming().hostUid == request.auth.uid
+        && validPlayer(incoming().host, request.auth.uid)
+        && incoming().guestUid == null
+        && incoming().guest == null
+        && incoming().hostReady == false
+        && incoming().guestReady == false
+        && incoming().createdAt == request.time
+        && incoming().startedAt == null
+        && incoming().endedAt == null
+        && incoming().endedBy == null
+        && incoming().expiresAt is timestamp
+        && (
+          (incoming().type == 'code'
+            && incoming().invitedUid == null
+            && incoming().invited == null
+            && incoming().friendshipId == null)
+          || (incoming().type == 'challenge'
+            && incoming().invitedUid is string
+            && incoming().invitedUid != request.auth.uid
+            && validPlayer(incoming().invited, incoming().invitedUid)
+            && incoming().friendshipId == pairId(request.auth.uid, incoming().invitedUid)
+            && exists(/databases/$(database)/documents/friendships/$(incoming().friendshipId)))
+        );
+
+      allow update: if signedIn() && (
+        // Take the empty seat.
+        (room().status == 'waiting'
+          && room().guestUid == null
+          && room().hostUid != request.auth.uid
+          && (room().type == 'code' || room().invitedUid == request.auth.uid)
+          && changed().hasOnly(['guestUid', 'guest'])
+          && incoming().guestUid == request.auth.uid
+          && validPlayer(incoming().guest, request.auth.uid))
+
+        // Guest gives up their seat before the match starts.
+        || (room().status == 'waiting'
+          && isGuest()
+          && changed().hasOnly(['guestUid', 'guest', 'guestReady', 'hostReady'])
+          && incoming().guestUid == null
+          && incoming().guest == null
+          && incoming().guestReady == false
+          && incoming().hostReady == false)
+
+        // Toggle your own ready flag.
+        || (waitingWithGuest() && isHost()
+          && changed().hasOnly(['hostReady'])
+          && incoming().hostReady is bool)
+        || (waitingWithGuest() && isGuest()
+          && changed().hasOnly(['guestReady'])
+          && incoming().guestReady is bool)
+
+        // Last player to ready up starts the match.
+        || (waitingWithGuest() && isHost()
+          && room().guestReady == true
+          && changed().hasOnly(['hostReady', 'status', 'startedAt', 'expiresAt'])
+          && incoming().hostReady == true
+          && incoming().status == 'live'
+          && incoming().startedAt == request.time
+          && incoming().expiresAt is timestamp)
+        || (waitingWithGuest() && isGuest()
+          && room().hostReady == true
+          && changed().hasOnly(['guestReady', 'status', 'startedAt', 'expiresAt'])
+          && incoming().guestReady == true
+          && incoming().status == 'live'
+          && incoming().startedAt == request.time
+          && incoming().expiresAt is timestamp)
+
+        // Host closes a waiting room.
+        || (room().status == 'waiting'
+          && isHost()
+          && changed().hasOnly(['status', 'endedAt', 'endedBy'])
+          && incoming().status == 'cancelled'
+          && incoming().endedAt == request.time
+          && incoming().endedBy == request.auth.uid)
+
+        // Invited friend declines a challenge.
+        || (room().status == 'waiting'
+          && room().type == 'challenge'
+          && room().invitedUid == request.auth.uid
+          && room().guestUid == null
+          && changed().hasOnly(['status', 'endedAt', 'endedBy'])
+          && incoming().status == 'declined'
+          && incoming().endedAt == request.time
+          && incoming().endedBy == request.auth.uid)
+
+        // Either player ends a live match.
+        || (room().status == 'live'
+          && (isHost() || isGuest())
+          && changed().hasOnly(['status', 'endedAt', 'endedBy'])
+          && incoming().status == 'finished'
+          && incoming().endedAt == request.time
+          && incoming().endedBy == request.auth.uid)
+      );
+
+      allow delete: if false;
+    }
+  }
+}

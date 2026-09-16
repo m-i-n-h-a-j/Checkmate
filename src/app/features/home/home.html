@@ -1,0 +1,90 @@
+<section
+  class="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-6xl flex-col items-center justify-center px-4 py-16 text-center"
+>
+  @if (signin() && auth.user() === null) {
+    <div
+      class="panel panel-pink animate-pop-in mb-12 flex w-full max-w-xl flex-col items-center gap-4 p-5 sm:flex-row sm:text-left"
+      role="status"
+    >
+      <p class="flex-1">Sign in to play. Pick your Google account and you're in.</p>
+      <button type="button" class="btn btn-pink" [disabled]="auth.signingIn()" (click)="signIn()">
+        Sign in
+      </button>
+    </div>
+  }
+
+  <div class="marquee">
+    <h1 class="marquee-title" aria-label="Checkmate">
+      @for (letter of letters; track $index) {
+        <span
+          class="marquee-letter"
+          [class.is-faulty]="$index === faultyLetter"
+          [style.--i]="$index"
+          aria-hidden="true"
+          >{{ letter }}</span
+        >
+      }
+    </h1>
+  </div>
+
+  <p class="mt-10 max-w-xl text-lg text-ink sm:text-xl">
+    Live chess against your friends. Every match plays out in public, so anyone can pull up a seat
+    and watch.
+  </p>
+
+  <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
+    @if (auth.user()) {
+      <a routerLink="/play" class="btn btn-pink btn-lg">Play now</a>
+    } @else {
+      <button
+        type="button"
+        class="btn btn-pink btn-lg"
+        [disabled]="auth.signingIn() || auth.user() === undefined"
+        (click)="signIn()"
+      >
+        <app-google-mark /> Sign in with Google
+      </button>
+    }
+    <a href="#live" class="btn btn-ghost btn-lg">Watch live matches</a>
+  </div>
+</section>
+
+<section id="live" class="mx-auto max-w-6xl scroll-mt-24 px-4 pb-16" aria-labelledby="live-title">
+  <div class="panel p-5 sm:p-8">
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <h2 id="live-title" class="flex items-center gap-3 text-2xl font-bold sm:text-3xl">
+        <span class="live-dot"></span> Live now
+      </h2>
+      @if (live(); as rooms) {
+        <p class="text-ink-dim">
+          {{ rooms.length }} {{ rooms.length === 1 ? 'match' : 'matches' }} on the board
+        </p>
+      }
+    </div>
+
+    @if (live(); as rooms) {
+      @if (rooms.length) {
+        <ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          @for (room of rooms; track room.code) {
+            <li class="animate-pop-in"><app-match-card [room]="room" /></li>
+          }
+        </ul>
+      } @else {
+        <div
+          class="flex flex-col items-center gap-5 rounded-xl border border-dashed border-line px-6 py-12 text-center"
+        >
+          <span class="text-5xl text-ink-faint" aria-hidden="true">♜</span>
+          <div>
+            <p class="text-lg font-semibold">Nobody's playing right now</p>
+            <p class="mt-1 text-ink-dim">
+              Start a match and it shows up here for everyone to watch.
+            </p>
+          </div>
+          <a routerLink="/play" class="btn btn-cyan">Start a match</a>
+        </div>
+      }
+    } @else {
+      <p class="pixel animate-blink py-12 text-center text-xs text-ink-dim">Loading matches</p>
+    }
+  </div>
+</section>

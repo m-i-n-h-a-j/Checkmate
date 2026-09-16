@@ -1,0 +1,102 @@
+<section class="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-lg flex-col justify-center px-4 py-12">
+  @if (profiles.profile(); as profile) {
+    <form class="panel panel-gold animate-pop-in p-6 sm:p-8" (submit)="save($event)" novalidate>
+      <div class="flex items-center gap-4">
+        <app-avatar
+          [name]="model().displayName || profile.displayName"
+          [photo]="profile.photoURL"
+          [size]="72"
+          ring="gold"
+        />
+        <div>
+          <h1 class="pixel text-sm leading-relaxed text-gold glow-gold sm:text-base">
+            Create your player
+          </h1>
+          <p class="mt-2 text-ink-dim">
+            This is how other players see you. You can change it later.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-8">
+        <label class="field-label" for="displayName">Display name</label>
+        <input
+          id="displayName"
+          class="field"
+          autocomplete="nickname"
+          [formField]="setupForm.displayName"
+          [attr.aria-invalid]="
+            setupForm.displayName().touched() && setupForm.displayName().invalid()
+          "
+          aria-describedby="displayName-error"
+        />
+        <p
+          id="displayName-error"
+          class="mt-2 min-h-5 text-sm font-semibold text-danger"
+          aria-live="polite"
+        >
+          @if (setupForm.displayName().touched()) {
+            @for (error of setupForm.displayName().errors(); track error.kind) {
+              {{ error.message }}
+            }
+          }
+        </p>
+      </div>
+
+      <div class="mt-4">
+        <label class="field-label" for="username"
+          >Username <span class="font-normal text-ink-dim">(optional)</span></label
+        >
+        <div class="field-prefix">
+          <span aria-hidden="true">&#64;</span>
+          <input
+            id="username"
+            class="field"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            placeholder="pick_a_handle"
+            [formField]="setupForm.username"
+            [attr.aria-invalid]="
+              usernameStatus().kind === 'taken' || usernameStatus().kind === 'invalid'
+            "
+            aria-describedby="username-hint"
+          />
+        </div>
+        <app-username-hint
+          id="username-hint"
+          class="mt-2"
+          [status]="usernameStatus()"
+          [name]="username()"
+        >
+          Friends can add you by &#64;username. Without one, they'll need your email.
+        </app-username-hint>
+
+        @if (ideas().length) {
+          <div class="mt-4 flex flex-wrap items-center gap-2">
+            <span class="text-sm text-ink-dim">Free right now:</span>
+            @for (idea of ideas(); track idea) {
+              <button
+                type="button"
+                class="chip text-sm"
+                [attr.aria-pressed]="username() === idea"
+                (click)="pick(idea)"
+              >
+                &#64;{{ idea }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <button type="button" class="btn btn-ghost" (click)="skip()">Skip for now</button>
+        <button #saveButton type="submit" class="btn btn-pink" [disabled]="!canSave()">
+          {{ saving() ? 'Saving…' : 'Save and play' }}
+        </button>
+      </div>
+    </form>
+  } @else {
+    <p class="pixel animate-blink text-center text-xs text-ink-dim">Loading your player</p>
+  }
+</section>

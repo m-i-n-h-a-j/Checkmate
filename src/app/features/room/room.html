@@ -1,0 +1,281 @@
+<section class="mx-auto max-w-5xl px-4 py-10">
+  @switch (state().status) {
+    @case ('loading') {
+      <p class="pixel animate-blink py-24 text-center text-xs text-ink-dim">Finding room</p>
+    }
+    @case ('missing') {
+      <div class="panel mx-auto mt-[12dvh] max-w-lg p-8 text-center">
+        <h1 class="pixel text-sm text-neon-pink glow-pink">Room not found</h1>
+        <p class="mt-4 text-ink-dim">
+          There's no room with code {{ code().toUpperCase() }}. Check the code and try again.
+        </p>
+        <a routerLink="/play" class="btn btn-cyan mt-6">Back to Play</a>
+      </div>
+    }
+    @case ('ready') {
+      @if (room(); as room) {
+        @switch (room.status) {
+          @case ('waiting') {
+            @if (!room.guest) {
+              @if (role() === 'host') {
+                <div
+                  class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-3 sm:gap-6"
+                >
+                  <app-player-card [player]="room.host" side="left" accent="cyan" caption="You" />
+                  <span class="pixel self-center text-xl text-ink-faint sm:text-3xl">VS</span>
+                  <app-player-card
+                    [player]="room.invited"
+                    accent="pink"
+                    [caption]="room.invited ? 'Invited' : ''"
+                  />
+                </div>
+
+                <div class="panel panel-gold mt-8 p-6 text-center sm:p-10">
+                  @if (room.type === 'challenge') {
+                    <h1 class="text-2xl font-bold">
+                      Waiting for {{ room.invited?.displayName }} to accept
+                    </h1>
+                    <p class="mt-2 text-ink-dim">
+                      They got your challenge. This page updates the moment they take the seat.
+                    </p>
+                  } @else {
+                    <h1 class="text-2xl font-bold">Share this code</h1>
+                    <p class="mt-2 text-ink-dim">Whoever enters it first takes the other seat.</p>
+                  }
+
+                  <div
+                    class="code-row mx-auto mt-8"
+                    role="img"
+                    [attr.aria-label]="'Room code ' + room.code.split('').join(' ')"
+                  >
+                    @for (char of room.code.split(''); track $index) {
+                      <span class="code-box code-box-filled">{{ char }}</span>
+                    }
+                  </div>
+
+                  <div class="mt-8 flex flex-wrap justify-center gap-3">
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="copy('code', room)">
+                      <app-icon name="copy" [size]="16" />
+                      {{ copied() === 'code' ? 'Copied' : 'Copy code' }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      (click)="copy('invite', room)"
+                    >
+                      <app-icon name="link" [size]="16" />
+                      {{ copied() === 'invite' ? 'Copied' : 'Copy invite link' }}
+                    </button>
+                  </div>
+
+                  <p class="pixel animate-blink mt-10 text-xs text-ink-dim">Waiting for opponent</p>
+                  <button
+                    type="button"
+                    class="btn btn-danger btn-sm mt-8"
+                    [disabled]="busy()"
+                    (click)="leave(room)"
+                  >
+                    Close room
+                  </button>
+                </div>
+              } @else if (room.type === 'code' || role() === 'invited') {
+                <div
+                  class="panel panel-cyan animate-pop-in mx-auto mt-[8dvh] max-w-lg p-8 text-center"
+                >
+                  <div class="flex justify-center">
+                    <app-avatar
+                      [name]="room.host.displayName"
+                      [photo]="room.host.photoURL"
+                      [size]="96"
+                      ring="cyan"
+                    />
+                  </div>
+                  <h1 class="mt-6 text-2xl font-bold">
+                    {{ room.host.displayName }}
+                    {{ role() === 'invited' ? 'challenged you' : 'is looking for an opponent' }}
+                  </h1>
+                  <p class="mt-2 text-ink-dim">
+                    Take the seat. The match goes live for spectators once you're both ready.
+                  </p>
+                  <div class="mt-8 flex flex-wrap justify-center gap-3">
+                    @if (role() === 'invited') {
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-lg"
+                        [disabled]="busy()"
+                        (click)="decline(room)"
+                      >
+                        Decline
+                      </button>
+                    }
+                    <button
+                      type="button"
+                      class="btn btn-pink btn-lg"
+                      [disabled]="busy()"
+                      (click)="join(room)"
+                    >
+                      Take the seat
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                <div class="panel mx-auto mt-[12dvh] max-w-lg p-8 text-center">
+                  <h1 class="text-2xl font-bold">This seat is saved for someone</h1>
+                  <p class="mt-2 text-ink-dim">
+                    {{ room.host.displayName }} challenged
+                    {{ room.invited?.displayName ?? 'a friend' }}. You can watch once the match
+                    starts.
+                  </p>
+                  <div class="mt-8 flex flex-wrap justify-center gap-3">
+                    <a [routerLink]="['/watch', room.code]" class="btn btn-cyan"
+                      >Watch this match</a
+                    >
+                    <a routerLink="/play" class="btn btn-ghost">Back to Play</a>
+                  </div>
+                </div>
+              }
+            } @else {
+              <div class="mb-8 text-center">
+                <h1 class="pixel text-base text-gold glow-gold sm:text-xl">Get ready</h1>
+                <p class="mt-3 text-ink-dim">Room {{ room.code }}</p>
+              </div>
+
+              <div
+                #vs
+                class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-3 sm:gap-6"
+              >
+                <app-player-card
+                  [player]="room.host"
+                  side="left"
+                  accent="cyan"
+                  [ready]="room.hostReady"
+                  [caption]="role() === 'host' ? 'You' : 'Host'"
+                />
+                <span class="pixel self-center animate-vs text-2xl text-gold glow-gold sm:text-4xl"
+                  >VS</span
+                >
+                <app-player-card
+                  [player]="room.guest"
+                  side="right"
+                  accent="pink"
+                  [ready]="room.guestReady"
+                  [caption]="role() === 'guest' ? 'You' : 'Challenger'"
+                />
+              </div>
+
+              @if (seated()) {
+                <div class="mt-10 flex flex-col items-center gap-4">
+                  <button
+                    type="button"
+                    class="btn btn-lg min-w-60"
+                    [class.btn-gold]="!myReady()"
+                    [class.btn-ghost]="myReady()"
+                    [attr.aria-pressed]="myReady()"
+                    [disabled]="busy()"
+                    (click)="toggleReady(room)"
+                  >
+                    {{ myReady() ? 'Not ready yet' : "I'm ready" }}
+                  </button>
+                  <p class="text-ink-dim" aria-live="polite">{{ readyHint() }}</p>
+                  <button
+                    type="button"
+                    class="btn btn-danger btn-sm mt-4"
+                    [disabled]="busy()"
+                    (click)="leave(room)"
+                  >
+                    {{ role() === 'host' ? 'Close room' : 'Leave seat' }}
+                  </button>
+                </div>
+              } @else {
+                <div class="mt-10 text-center">
+                  <p class="text-ink-dim">
+                    Both seats are taken. The match shows up on the watch page when it starts.
+                  </p>
+                  <a [routerLink]="['/watch', room.code]" class="btn btn-cyan mt-6"
+                    >Watch this match</a
+                  >
+                </div>
+              }
+            }
+          }
+
+          @case ('live') {
+            <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+              <div class="panel panel-pink flex items-center gap-3 px-4 py-2">
+                <span class="live-dot"></span>
+                <span class="font-semibold text-neon-pink">Live</span>
+                <span class="text-sm text-ink-dim">Anyone can watch this match</span>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn btn-ghost btn-sm" (click)="copy('watch', room)">
+                  <app-icon name="link" [size]="16" />
+                  {{ copied() === 'watch' ? 'Copied' : 'Copy watch link' }}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-danger btn-sm"
+                  [disabled]="busy()"
+                  (click)="leave(room)"
+                >
+                  {{ leaveArmed() ? 'Tap again to end' : 'End match' }}
+                </button>
+              </div>
+            </div>
+
+            <div
+              class="mb-8 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-3 sm:gap-6"
+            >
+              <app-player-card
+                [player]="room.host"
+                side="left"
+                accent="cyan"
+                [caption]="role() === 'host' ? 'You' : ''"
+              />
+              <span class="pixel self-center text-xl text-gold glow-gold sm:text-3xl">VS</span>
+              <app-player-card
+                [player]="room.guest"
+                side="right"
+                accent="pink"
+                [caption]="role() === 'guest' ? 'You' : ''"
+              />
+            </div>
+
+            <app-board-placeholder />
+          }
+
+          @default {
+            <div class="panel animate-pop-in mx-auto mt-[12dvh] max-w-lg p-8 text-center">
+              <p class="pixel text-lg text-neon-pink glow-pink">Game over</p>
+              <p class="mt-4 text-ink-dim">{{ overMessage() }}</p>
+              <a routerLink="/play" class="btn btn-cyan mt-8">Back to Play</a>
+            </div>
+          }
+        }
+      }
+    }
+  }
+</section>
+
+@if (countdown(); as step) {
+  <div
+    class="fixed inset-0 z-[70] grid place-items-center bg-void/75 backdrop-blur-sm"
+    role="status"
+    aria-live="assertive"
+  >
+    <!-- Each case mounts a fresh element so the hit animation replays per step. -->
+    @switch (step) {
+      @case ('3') {
+        <span class="countdown-step pixel text-7xl text-gold glow-gold sm:text-9xl">3</span>
+      }
+      @case ('2') {
+        <span class="countdown-step pixel text-7xl text-gold glow-gold sm:text-9xl">2</span>
+      }
+      @case ('1') {
+        <span class="countdown-step pixel text-7xl text-gold glow-gold sm:text-9xl">1</span>
+      }
+      @default {
+        <span class="countdown-step pixel text-7xl text-go sm:text-9xl">GO</span>
+      }
+    }
+  </div>
+}

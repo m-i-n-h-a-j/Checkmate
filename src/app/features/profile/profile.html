@@ -1,0 +1,134 @@
+<section class="mx-auto max-w-5xl px-4 py-10">
+  @if (profiles.profile(); as profile) {
+    <div
+      class="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+    >
+      <div class="panel panel-gold flex flex-col items-center p-8 text-center">
+        <app-avatar
+          [name]="profile.displayName"
+          [photo]="profile.photoURL"
+          [size]="112"
+          ring="gold"
+        />
+        <h1 class="pixel mt-6 max-w-full truncate text-base text-gold glow-gold">
+          {{ profile.displayName }}
+        </h1>
+        <p class="mt-2 text-ink-dim">
+          @if (profile.username) {
+            &#64;{{ profile.username }}
+          } @else {
+            No username yet
+          }
+        </p>
+
+        <dl class="mt-8 grid w-full grid-cols-4 gap-2 rounded-xl border border-line bg-void/50 p-4">
+          <div>
+            <dt class="text-xs text-ink-dim">Rating</dt>
+            <dd class="pixel mt-2 text-xs text-gold">{{ profile.stats.rating }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-ink-dim">Wins</dt>
+            <dd class="pixel mt-2 text-xs text-go">{{ profile.stats.wins }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-ink-dim">Losses</dt>
+            <dd class="pixel mt-2 text-xs text-neon-pink">{{ profile.stats.losses }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-ink-dim">Draws</dt>
+            <dd class="pixel mt-2 text-xs text-neon-cyan">{{ profile.stats.draws }}</dd>
+          </div>
+        </dl>
+
+        <div class="mt-6 w-full text-left">
+          <p class="text-sm font-semibold">Player ID</p>
+          <p class="mt-1 text-sm text-ink-dim">
+            Share it with friends who don't know your email or username.
+          </p>
+          <div class="mt-2 flex items-center gap-2">
+            <code
+              class="min-w-0 flex-1 truncate rounded-lg border border-line bg-void-deep px-3 py-2 text-sm"
+              >{{ profile.uid }}</code
+            >
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              (click)="copyId(profile.uid)"
+              [attr.aria-label]="copied() ? 'Copied' : 'Copy player ID'"
+            >
+              <app-icon name="copy" [size]="16" /> {{ copied() ? 'Copied' : 'Copy' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <form class="panel p-6 sm:p-8" (submit)="save($event)" novalidate>
+        <h2 class="text-2xl font-bold">Edit your player</h2>
+
+        <div class="mt-6">
+          <label class="field-label" for="displayName">Display name</label>
+          <input
+            id="displayName"
+            class="field"
+            autocomplete="nickname"
+            [formField]="profileForm.displayName"
+            [attr.aria-invalid]="profileForm.displayName().invalid()"
+            aria-describedby="displayName-error"
+          />
+          <p
+            id="displayName-error"
+            class="mt-2 min-h-5 text-sm font-semibold text-danger"
+            aria-live="polite"
+          >
+            @for (error of profileForm.displayName().errors(); track error.kind) {
+              {{ error.message }}
+            }
+          </p>
+        </div>
+
+        <div class="mt-4">
+          <label class="field-label" for="username">Username</label>
+          <div class="field-prefix">
+            <span aria-hidden="true">&#64;</span>
+            <input
+              id="username"
+              class="field"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              placeholder="pick_a_handle"
+              [formField]="profileForm.username"
+              [attr.aria-invalid]="
+                usernameStatus().kind === 'taken' || usernameStatus().kind === 'invalid'
+              "
+              aria-describedby="username-hint"
+            />
+          </div>
+          <app-username-hint
+            id="username-hint"
+            class="mt-2"
+            [status]="usernameStatus()"
+            [name]="username()"
+          >
+            @if (profile.username) {
+              Usernames can be changed but not removed.
+            } @else {
+              Without a username, friends can only add you by email or player ID.
+            }
+          </app-username-hint>
+        </div>
+
+        <div class="mt-8 flex flex-wrap items-center justify-between gap-3">
+          <button type="button" class="btn btn-ghost" (click)="signOut()">
+            <app-icon name="logout" [size]="16" /> Sign out
+          </button>
+          <button type="submit" class="btn btn-pink" [disabled]="!canSave()">
+            {{ saving() ? 'Saving…' : 'Save changes' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  } @else {
+    <p class="pixel animate-blink py-24 text-center text-xs text-ink-dim">Loading your player</p>
+  }
+</section>

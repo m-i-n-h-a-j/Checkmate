@@ -1,0 +1,201 @@
+<section class="mx-auto max-w-6xl px-4 py-10">
+  <header class="mb-8">
+    <h1 class="pixel text-xl text-gold glow-gold sm:text-2xl">Friends</h1>
+    <p class="mt-3 max-w-2xl text-lg text-ink-dim">
+      Friends can challenge each other straight into a match.
+    </p>
+  </header>
+
+  <form class="panel panel-cyan p-6 sm:p-8" (submit)="add($event)" novalidate>
+    <label class="text-xl font-bold" for="lookup">Add a friend</label>
+    <p class="mt-1 text-ink-dim">Enter their email, &#64;username or player ID.</p>
+    <div class="mt-5 flex flex-col gap-3 sm:flex-row">
+      <input
+        id="lookup"
+        class="field flex-1"
+        type="text"
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        placeholder="friend@gmail.com or @username"
+        [formField]="addForm.lookup"
+        [attr.aria-invalid]="addError() ? true : null"
+        aria-describedby="lookup-error"
+      />
+      <button
+        #addButton
+        type="submit"
+        class="btn btn-cyan btn-lg"
+        [disabled]="sending() || !model().lookup.trim()"
+      >
+        {{ sending() ? 'Searching…' : 'Send request' }}
+      </button>
+    </div>
+    <p
+      id="lookup-error"
+      class="mt-3 min-h-6 font-semibold text-danger"
+      [class.animate-shake]="addError()"
+      aria-live="polite"
+    >
+      {{ addError() }}
+    </p>
+  </form>
+
+  <div
+    class="mt-6 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+  >
+    <div class="panel p-6 sm:p-8" aria-labelledby="list-title">
+      <h2 id="list-title" class="text-xl font-bold">
+        Your friends
+        @if (friends.loaded()) {
+          <span class="font-normal text-ink-dim">({{ friends.friends().length }})</span>
+        }
+      </h2>
+
+      @if (!friends.loaded()) {
+        <p class="pixel animate-blink py-8 text-xs text-ink-dim">Loading friends</p>
+      } @else if (friends.friends().length) {
+        <ul class="mt-5 divide-y divide-line">
+          @for (friend of friends.friends(); track friend.friendshipId) {
+            <li class="flex flex-wrap items-center gap-x-3 gap-y-3 py-3">
+              <app-avatar
+                [name]="friend.profile?.displayName ?? '?'"
+                [photo]="friend.profile?.photoURL ?? null"
+                [online]="presence.isOnline(friend.profile)"
+                [size]="48"
+              />
+              <div class="min-w-0 flex-1 basis-40">
+                <p class="truncate font-semibold">
+                  {{ friend.profile?.displayName ?? 'Loading…' }}
+                </p>
+                <p class="truncate text-sm text-ink-dim">
+                  @if (friend.profile?.username) {
+                    &#64;{{ friend.profile?.username }} ·
+                  }
+                  <span [class.text-go]="presence.isOnline(friend.profile)">{{
+                    presence.statusLabel(friend.profile)
+                  }}</span>
+                </p>
+              </div>
+              <div class="flex w-full justify-end gap-2 sm:w-auto">
+                <button
+                  type="button"
+                  class="btn btn-danger btn-sm"
+                  [disabled]="busy() !== null"
+                  (click)="remove(friend)"
+                  [attr.aria-label]="
+                    (removeArmed() === friend.friendshipId ? 'Confirm removing ' : 'Remove ') +
+                    (friend.profile?.displayName ?? 'friend')
+                  "
+                >
+                  {{ removeArmed() === friend.friendshipId ? 'Tap to confirm' : 'Remove' }}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-gold btn-sm"
+                  [disabled]="!friend.profile || busy() !== null"
+                  (click)="challenge(friend)"
+                  [attr.aria-label]="'Challenge ' + (friend.profile?.displayName ?? 'friend')"
+                >
+                  Challenge
+                </button>
+              </div>
+            </li>
+          }
+        </ul>
+      } @else {
+        <div class="mt-5 rounded-xl border border-dashed border-line p-6 text-ink-dim">
+          No friends yet. Send a request above. Once they accept, you can challenge them from here
+          or from Play.
+        </div>
+      }
+    </div>
+
+    <div class="flex flex-col gap-6">
+      <div
+        class="panel p-6 sm:p-8"
+        [class.panel-pink]="friends.incoming().length"
+        aria-labelledby="incoming-title"
+      >
+        <h2 id="incoming-title" class="flex items-center gap-3 text-xl font-bold">
+          Waiting on you
+          @if (friends.incoming().length) {
+            <span class="badge">{{ friends.incoming().length }}</span>
+          }
+        </h2>
+        @if (friends.incoming().length) {
+          <ul class="mt-5 divide-y divide-line">
+            @for (request of friends.incoming(); track request.id) {
+              <li class="animate-pop-in flex flex-wrap items-center gap-x-3 gap-y-3 py-3">
+                <app-avatar
+                  [name]="request.fromPlayer.displayName"
+                  [photo]="request.fromPlayer.photoURL"
+                  [size]="44"
+                  ring="pink"
+                />
+                <div class="min-w-0 flex-1 basis-32">
+                  <p class="truncate font-semibold">{{ request.fromPlayer.displayName }}</p>
+                  @if (request.fromPlayer.username) {
+                    <p class="truncate text-sm text-ink-dim">
+                      &#64;{{ request.fromPlayer.username }}
+                    </p>
+                  }
+                </div>
+                <div class="flex w-full justify-end gap-2 sm:w-auto lg:w-full xl:w-auto">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    [disabled]="busy() !== null"
+                    (click)="dismiss(request)"
+                  >
+                    Decline
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-pink btn-sm"
+                    [disabled]="busy() !== null"
+                    (click)="accept(request, $event)"
+                  >
+                    Accept
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="mt-3 text-ink-dim">No requests right now.</p>
+        }
+      </div>
+
+      <div class="panel p-6 sm:p-8" aria-labelledby="outgoing-title">
+        <h2 id="outgoing-title" class="text-xl font-bold">Sent</h2>
+        @if (friends.outgoing().length) {
+          <ul class="mt-5 divide-y divide-line">
+            @for (request of friends.outgoing(); track request.id) {
+              <li class="flex flex-wrap items-center gap-3 py-3">
+                <app-avatar
+                  [name]="request.toPlayer.displayName"
+                  [photo]="request.toPlayer.photoURL"
+                  [size]="40"
+                />
+                <p class="min-w-0 flex-1 truncate font-semibold">
+                  {{ request.toPlayer.displayName }}
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  [disabled]="busy() !== null"
+                  (click)="dismiss(request)"
+                >
+                  Cancel
+                </button>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="mt-3 text-ink-dim">Requests you send show up here until they're answered.</p>
+        }
+      </div>
+    </div>
+  </div>
+</section>
