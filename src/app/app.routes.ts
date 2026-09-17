@@ -13,6 +13,16 @@ export const routes: Routes = [
     loadComponent: () => import('./features/watch/watch').then((m) => m.Watch),
   },
   {
+    path: 'bots',
+    title: 'Bots | Checkmate',
+    loadComponent: () => import('./features/bots/bots').then((m) => m.Bots),
+  },
+  {
+    path: 'bots/play',
+    title: 'Playing a bot | Checkmate',
+    loadComponent: () => import('./features/bots/bot-game').then((m) => m.BotGamePage),
+  },
+  {
     path: 'setup',
     title: 'Create your player | Checkmate',
     canActivate: [requireAuth],

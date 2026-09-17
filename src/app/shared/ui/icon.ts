@@ -14,7 +14,8 @@ export type IconName =
   | 'sound'
   | 'sound-off'
   | 'sparkles'
-  | 'sparkles-off';
+  | 'sparkles-off'
+  | 'bot';
 
 /** Chunky 24px line icons drawn on a pixel grid. */
 @Component({
@@ -79,6 +80,10 @@ export type IconName =
           <path
             d="m10 4 1.8 5.2L17 11l-5.2 1.8L10 18l-1.8-5.2L3 11l5.2-1.8L10 4ZM19 2v4M17 4h4M19 17v4M17 19h4"
           />
+        }
+        @case ('bot') {
+          <rect x="4" y="8" width="16" height="12" rx="2" />
+          <path d="M12 4v4M9 13h.01M15 13h.01M9 17h6M2 12v4M22 12v4" />
         }
         @case ('sparkles-off') {
           <path d="m10 4 1.8 5.2L17 11l-5.2 1.8L10 18l-1.8-5.2L3 11l5.2-1.8L10 4ZM3 21 21 3" />

@@ -22,6 +22,9 @@
       <a routerLink="/play" routerLinkActive="is-active" class="nav-link"
         ><app-icon name="play" [size]="18" /> Play</a
       >
+      <a routerLink="/bots" routerLinkActive="is-active" class="nav-link"
+        ><app-icon name="bot" [size]="18" /> Bots</a
+      >
       <a routerLink="/friends" routerLinkActive="is-active" class="nav-link">
         <app-icon name="friends" [size]="18" /> Friends
         @if (requestCount()) {
@@ -118,7 +121,7 @@
   class="fixed inset-x-0 bottom-0 z-40 border-t border-line/70 bg-void/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
   aria-label="Sections"
 >
-  <div class="mx-auto grid max-w-md grid-cols-3">
+  <div class="mx-auto grid max-w-md grid-cols-4">
     <a
       routerLink="/"
       routerLinkActive="is-active"
@@ -129,6 +132,9 @@
     </a>
     <a routerLink="/play" routerLinkActive="is-active" class="nav-link flex-col gap-1 py-3 text-xs">
       <app-icon name="play" /> Play
+    </a>
+    <a routerLink="/bots" routerLinkActive="is-active" class="nav-link flex-col gap-1 py-3 text-xs">
+      <app-icon name="bot" /> Bots
     </a>
     <a
       routerLink="/friends"

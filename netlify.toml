@@ -47,6 +47,12 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# The chess engine's file names carry its version, so a new engine gets new names.
+[[headers]]
+  for = "/engine/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 # The service worker checks these on every launch to find new deploys.
 [[headers]]
   for = "/ngsw-worker.js"

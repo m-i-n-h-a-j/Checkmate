@@ -103,6 +103,11 @@
   text-align: left;
 }
 
+/* Arrows, including the gold hint arrow in bot games, read clearly over the violet squares. */
+.board-theme .cg-shapes {
+  opacity: 0.85;
+}
+
 /* Match cards show many boards at once: keep pieces off their own GPU layers. */
 .board-mini .cg-wrap piece,
 .board-mini cg-board square.last-move {

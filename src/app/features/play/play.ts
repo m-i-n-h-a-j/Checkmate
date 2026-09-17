@@ -8,11 +8,12 @@ import { RoomsService } from '../../core/rooms/rooms.service';
 import { ROOM_CODE_LENGTH } from '../../core/util/ids';
 import { Avatar } from '../../shared/ui/avatar';
 import { CodeInput } from '../../shared/ui/code-input';
+import { Icon } from '../../shared/ui/icon';
 import { ToastService } from '../../shared/ui/toast.service';
 
 @Component({
   selector: 'app-play',
-  imports: [RouterLink, Avatar, CodeInput],
+  imports: [RouterLink, Avatar, CodeInput, Icon],
   templateUrl: './play.html',
 })
 export class Play {

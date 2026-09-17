@@ -16,9 +16,12 @@ import {
 import { Chessground } from 'chessground';
 import type { Api } from 'chessground/api';
 import type { Config } from 'chessground/config';
+import type { DrawBrushes } from 'chessground/draw';
 import type { Key, MoveMetadata } from 'chessground/types';
 import type { Promotion } from '../../core/game/notation';
 import { Side } from '../../core/models';
+
+const HINT_BRUSH = { key: 'hint', color: '#ffc94a', opacity: 0.9, lineWidth: 12 };
 
 export interface BoardMove {
   from: string;
@@ -90,6 +93,8 @@ export class Chessboard {
   readonly dests = input<ReadonlyMap<string, readonly string[]>>(new Map());
   /** Small, still board for match cards. */
   readonly mini = input(false);
+  /** A suggested move, drawn as an arrow. */
+  readonly hint = input<readonly [string, string] | null>(null);
 
   readonly moved = output<BoardMove>();
 
@@ -124,7 +129,15 @@ export class Chessboard {
       premovable: { enabled: playable !== null, showDests: true },
       draggable: { enabled: playable !== null, showGhost: true },
       selectable: { enabled: playable !== null },
-      drawable: { enabled: !this.mini(), visible: !this.mini() },
+      drawable: {
+        enabled: !this.mini(),
+        visible: !this.mini(),
+        autoShapes: this.hint()
+          ? [{ orig: this.hint()![0] as Key, dest: this.hint()![1] as Key, brush: 'hint' }]
+          : [],
+        // Chessground merges this into its own brushes, so players can still draw their own arrows.
+        brushes: { hint: HINT_BRUSH } as Partial<DrawBrushes> as DrawBrushes,
+      },
       blockTouchScroll: playable !== null,
     };
   });

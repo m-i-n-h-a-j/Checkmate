@@ -38,7 +38,7 @@
           (moved)="onBoardMove($event)"
         />
         <app-board-fx [orientation]="orientation()" />
-        @if (room().status === 'finished' && showResult()) {
+        @if (room().status === 'finished' && moments.showResult()) {
           <div class="absolute inset-0 z-30 grid place-items-center rounded-md bg-void-deep/65 p-3">
             <app-game-over
               [room]="room()"
@@ -46,8 +46,8 @@
               [whiteName]="nameOf('white')"
               [blackName]="nameOf('black')"
               [dismissible]="true"
-              [focusResult]="focusResult()"
-              (dismissed)="showResult.set(false)"
+              [focusResult]="moments.focusResult()"
+              (dismissed)="moments.showResult.set(false)"
             />
           </div>
         }
@@ -122,7 +122,7 @@
         />
       }
 
-      @if (room().status === 'finished' && !showResult() && !revealing()) {
+      @if (room().status === 'finished' && !moments.showResult() && !moments.revealing()) {
         <app-game-over
           [room]="room()"
           [mySide]="mySide()"
@@ -149,5 +149,5 @@
     </aside>
   </div>
 
-  <p class="sr-only" aria-live="polite">{{ announcement() }}</p>
+  <p class="sr-only" aria-live="polite">{{ moments.announcement() }}</p>
 }

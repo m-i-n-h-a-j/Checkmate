@@ -45,6 +45,8 @@ const LOW_TIME_MS = 20_000;
           <span class="sr-only">Plays {{ side() }}.</span>
           @if (profile(); as p) {
             <span>{{ p.stats.rating }}</span>
+          } @else if (ratingLabel()) {
+            <span>{{ ratingLabel() }}</span>
           }
           @if (ratingDiff() !== null) {
             <span
@@ -134,6 +136,8 @@ export class PlayerStrip {
   /** Material lead in pawns, when this side is ahead. */
   readonly lead = input(0);
   readonly ratingDiff = input<number | null>(null);
+  /** Shown in place of a rating when there's no profile, e.g. a bot's strength. */
+  readonly ratingLabel = input<string | null>(null);
 
   protected readonly time = computed(() => formatClock(this.clockMs() ?? 0));
   protected readonly low = computed(() => (this.clockMs() ?? Infinity) < LOW_TIME_MS);

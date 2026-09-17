@@ -1,0 +1,193 @@
+<section class="mx-auto max-w-6xl px-4 py-4 sm:py-6">
+  @if (game(); as game) {
+    @if (bot(); as bot) {
+      <h1 class="sr-only">You vs {{ bot.name }}</h1>
+      <div
+        class="grid grid-cols-[minmax(0,1fr)] items-stretch gap-4 lg:grid-cols-[auto_20rem] lg:justify-center lg:gap-6"
+      >
+        <!-- The board fits the screen height, leaving room for both player strips. -->
+        <div
+          class="mx-auto flex w-full max-w-[min(46rem,max(18rem,calc(100dvh-15rem)))] flex-col gap-2 lg:w-[min(46rem,calc(100vw-25rem),max(18rem,calc(100dvh-15rem)))] lg:max-w-none"
+        >
+          @let top = strips()[0];
+          <app-player-strip
+            [side]="top.side"
+            [player]="top.player"
+            [you]="top.you"
+            [ratingLabel]="top.ratingLabel"
+            [clockMs]="top.clockMs"
+            [running]="top.running"
+            [imbalance]="top.imbalance"
+            [lead]="top.lead"
+          />
+
+          <div class="board-stage relative">
+            <app-chessboard
+              [fen]="position().fen"
+              [orientation]="orientation()"
+              [turn]="position().turn"
+              [lastMove]="position().lastMove"
+              [check]="position().check"
+              [playable]="live() ? mySide() : null"
+              [dests]="position().dests"
+              [hint]="hint()"
+              (moved)="onBoardMove($event)"
+            />
+            <app-board-fx [orientation]="orientation()" />
+            @if (game.status === 'finished' && moments.showResult()) {
+              <div
+                class="absolute inset-0 z-30 grid place-items-center rounded-md bg-void-deep/65 p-3"
+              >
+                <app-bot-result
+                  [game]="game"
+                  [bot]="bot"
+                  [nextBot]="nextBot()"
+                  [firstWin]="firstWin()"
+                  [dismissible]="true"
+                  [focusResult]="moments.focusResult()"
+                  (again)="playAgain()"
+                  (playNext)="playAgain($event)"
+                  (dismissed)="moments.showResult.set(false)"
+                />
+              </div>
+            }
+          </div>
+
+          @let bottom = strips()[1];
+          <app-player-strip
+            [side]="bottom.side"
+            [player]="bottom.player"
+            [you]="bottom.you"
+            [ratingLabel]="bottom.ratingLabel"
+            [clockMs]="bottom.clockMs"
+            [running]="bottom.running"
+            [imbalance]="bottom.imbalance"
+            [lead]="bottom.lead"
+          />
+        </div>
+
+        <aside class="panel flex flex-col gap-4 p-4 lg:h-0 lg:min-h-full" aria-label="Game details">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <span class="font-semibold" [class.text-ink-dim]="!live()">{{
+                live() ? 'Practice' : 'Finished'
+              }}</span>
+              <span class="text-sm text-ink-dim">{{ speed() }}</span>
+            </div>
+            <div class="flex shrink-0 gap-1.5">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm size-10 p-0"
+                aria-label="Flip board"
+                [attr.aria-pressed]="flipped()"
+                (click)="flip()"
+              >
+                <app-icon name="flip" [size]="18" />
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm size-10 p-0"
+                aria-label="Game sounds"
+                [attr.aria-pressed]="!sounds.muted()"
+                (click)="sounds.toggle()"
+              >
+                <app-icon [name]="sounds.muted() ? 'sound-off' : 'sound'" [size]="18" />
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm size-10 p-0"
+                aria-label="Heavy effects"
+                [attr.aria-pressed]="effects.full()"
+                [title]="effects.full() ? 'Heavy effects on' : 'Heavy effects off'"
+                (click)="effects.toggle()"
+              >
+                <app-icon [name]="effects.full() ? 'sparkles' : 'sparkles-off'" [size]="18" />
+              </button>
+            </div>
+          </div>
+
+          <p class="text-ink-dim">{{ bot.tagline }}</p>
+
+          @if (live()) {
+            <div class="flex min-h-7 items-center gap-3">
+              <p class="min-w-0 flex-1 text-lg font-semibold" [class.text-gold]="myTurn()">
+                {{ status() }}
+              </p>
+              @if (engine.status() === 'error') {
+                <button type="button" class="btn btn-cyan btn-sm" (click)="retryEngine()">
+                  Retry
+                </button>
+              }
+            </div>
+            @if (engine.status() === 'loading') {
+              <div
+                class="h-2 overflow-hidden rounded-full bg-void-deep"
+                role="progressbar"
+                aria-label="Downloading the chess engine"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                [attr.aria-valuenow]="progressPercent()"
+              >
+                <div
+                  class="h-full origin-left rounded-full bg-neon-cyan transition-transform"
+                  [style.transform]="'scaleX(' + engine.progress() + ')'"
+                ></div>
+              </div>
+            }
+
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                [disabled]="!myTurn() || hinting() || engine.status() !== 'ready'"
+                (click)="showHint()"
+              >
+                {{ hinting() ? '…' : 'Hint' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                [disabled]="!canTakeBack()"
+                (click)="takeBack()"
+              >
+                Undo
+              </button>
+              <button type="button" class="btn btn-danger btn-sm" (click)="resign()">
+                {{ resignArmed() ? 'Sure?' : 'Resign' }}
+              </button>
+            </div>
+            <p class="sr-only" aria-live="polite">
+              @if (resignArmed()) {
+                Press resign again to confirm.
+              }
+            </p>
+          }
+
+          @if (game.status === 'finished' && !moments.showResult() && !moments.revealing()) {
+            <app-bot-result
+              [game]="game"
+              [bot]="bot"
+              [nextBot]="nextBot()"
+              [firstWin]="firstWin()"
+              (again)="playAgain()"
+              (playNext)="playAgain($event)"
+            />
+          }
+
+          <app-move-list class="lg:flex-1" [history]="position().history" />
+
+          @if (live()) {
+            <app-move-input
+              [legal]="myTurn() ? position().legal : []"
+              [disabled]="!myTurn()"
+              [hint]="myTurn() ? 'Your move.' : 'Waiting for ' + bot.name + '.'"
+              (played)="onTypedMove($event)"
+            />
+          }
+        </aside>
+      </div>
+
+      <p class="sr-only" aria-live="polite">{{ moments.announcement() }}</p>
+    }
+  }
+</section>

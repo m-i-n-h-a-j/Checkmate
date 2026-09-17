@@ -18,6 +18,14 @@
       }
     },
     {
+      "name": "engine",
+      "installMode": "lazy",
+      "updateMode": "lazy",
+      "resources": {
+        "files": ["/engine/*.js", "/engine/*.wasm"]
+      }
+    },
+    {
       "name": "fonts",
       "installMode": "lazy",
       "updateMode": "lazy",

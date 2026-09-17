@@ -18,15 +18,15 @@ import { opposite, parseUci } from '../../core/game/notation';
 import { ServerClock } from '../../core/game/server-clock.service';
 import { SoundService } from '../../core/game/sound.service';
 import { timeControlOption } from '../../core/game/time-controls';
-import { PlayerSnapshot, Room, RoomStatus, Side } from '../../core/models';
+import { PlayerSnapshot, Room, Side } from '../../core/models';
 import { ProfileService } from '../../core/profile/profile.service';
 import { EffectsService } from '../../core/settings/effects.service';
-import { burst } from '../../shared/fx/burst';
 import { BoardMove, Chessboard } from '../../shared/chess/chessboard';
 import { Icon } from '../../shared/ui/icon';
 import { ToastService } from '../../shared/ui/toast.service';
-import { BoardFx, Finale } from './board-fx';
+import { BoardFx } from './board-fx';
 import { GameControls } from './game-controls';
+import { GameMoments } from './game-moments';
 import { GameOver } from './game-over';
 import { MoveInput } from './move-input';
 import { MoveList } from './move-list';
@@ -123,15 +123,14 @@ export class GameView {
     return this.canMove() ? 'Your move.' : 'Waiting for your opponent.';
   });
 
-  protected readonly showResult = signal(false);
-  /** True while the ending cinematic plays, so no result card spoils it. */
-  protected readonly revealing = signal(false);
-  protected readonly focusResult = signal(false);
-  protected readonly announcement = signal('');
+  protected readonly moments = new GameMoments({
+    fx: () => this.fx(),
+    nameOf: (side) => this.nameOf(side),
+    mySide: () => this.mySide(),
+    resultSelector: 'app-game-over h2',
+  });
   protected readonly copied = signal(false);
 
-  private soundedPlies = -1;
-  private readonly timers: ReturnType<typeof setTimeout>[] = [];
   private claimDelay = 0;
   private claiming = false;
 
@@ -167,57 +166,22 @@ export class GameView {
       untracked(() => void this.claimFlag(room));
     });
 
-    // Sounds, effects, announcements and the result screen follow the game as it changes. Only
-    // what happens while watching gets effects, never a position loaded with the page.
-    let previous: { plies: number; status: RoomStatus } | null = null;
+    // Sounds, effects, announcements and the result screen follow the game as it changes.
     effect(() => {
       const room = this.room();
       const position = this.position();
-      untracked(() => {
-        const plies = room.moves.length;
-        const justEnded = room.status === 'finished' && previous?.status === 'live';
-        if (previous && plies > previous.plies) {
-          const san = position.history.at(-1) ?? '';
-          const capture = position.lastCapture;
-          if (plies !== this.soundedPlies) this.playMoveSound(san, capture?.piece ?? null);
-          this.announcement.set(
-            `${this.nameOf(plies % 2 === 1 ? 'white' : 'black')} played ${san}`,
-          );
-          if (plies === previous.plies + 1) {
-            const promotion = position.lastPromotion;
-            if (capture) {
-              const quiet = justEnded || !!promotion;
-              this.fx()?.capture(capture, this.nameOf(opposite(capture.color)), quiet);
-            }
-            if (promotion) {
-              const mover = this.nameOf(promotion.color);
-              const shown = this.fx()?.promotion(
-                promotion.square,
-                promotion.piece,
-                promotion.color,
-                mover,
-                justEnded,
-              );
-              if (shown) this.sounds.play('promote');
-            }
-            if (!justEnded && position.check && position.kingSquare) {
-              this.fx()?.check(position.kingSquare);
-            }
-          }
-        }
-        if (justEnded) {
-          this.endGame(room);
-        } else if (room.status === 'finished' && !previous) {
-          this.showResult.set(true);
-        }
-        previous = { plies, status: room.status };
-      });
+      untracked(() =>
+        this.moments.follow({
+          plies: room.moves.length,
+          status: room.status === 'live' ? 'live' : 'finished',
+          position,
+          result: room.result,
+          reason: room.reason,
+        }),
+      );
     });
 
-    destroyRef.onDestroy(() => {
-      this.claiming = true;
-      this.timers.forEach(clearTimeout);
-    });
+    destroyRef.onDestroy(() => (this.claiming = true));
   }
 
   protected onBoardMove(move: BoardMove): void {
@@ -258,8 +222,7 @@ export class GameView {
       this.board()?.reset();
       return;
     }
-    this.soundedPlies = room.moves.length + 1;
-    this.playMoveSound(played.san, played.captured);
+    this.moments.playedLocally(room.moves.length + 1, played.san, played.captured);
     if (played.outcome) this.finishing.set(true);
     this.games
       .move(room, played)
@@ -282,88 +245,6 @@ export class GameView {
     await new Promise((resolve) => setTimeout(resolve, this.claimDelay));
     this.claiming = false;
     this.now.set(this.serverClock.now());
-  }
-
-  private playMoveSound(san: string, captured: string | null): void {
-    if (captured === 'q' || captured === 'r') {
-      this.sounds.play('shatter');
-    } else {
-      this.sounds.play(/[+#]/.test(san) ? 'check' : captured ? 'capture' : 'move');
-    }
-  }
-
-  private later(fn: () => void, ms: number): void {
-    this.timers.push(setTimeout(fn, ms));
-  }
-
-  /** Plays the ending cinematic, then reveals the result. */
-  private endGame(room: Room): void {
-    const finale = this.finaleOf(room);
-    if (finale) this.announcement.set(`Game over. ${finale.subtitle}.`);
-    const duration = finale ? (this.fx()?.finale(finale.kind, finale) ?? 0) : 0;
-    this.revealing.set(duration > 0);
-    if (duration > 0) {
-      if (finale?.kind === 'checkmate') this.later(() => this.sounds.play('boom'), 1050);
-      if (finale?.kind === 'stalemate' || finale?.kind === 'draw') this.sounds.play('freeze');
-      if (finale?.kind === 'timeout' || finale?.kind === 'resign') {
-        this.later(() => this.sounds.play('boom'), 420);
-      }
-    }
-    this.later(() => {
-      this.revealing.set(false);
-      this.showResult.set(true);
-      this.focusResult.set(this.mySide() !== null);
-      this.celebrate(room);
-    }, duration);
-  }
-
-  private finaleOf(
-    room: Room,
-  ): { kind: Finale; subtitle: string; kingSquare: string | null; loser: Side } | null {
-    const position = this.position();
-    const loserName = this.nameOf(room.result === 'white' ? 'black' : 'white');
-    const base = { kingSquare: position.kingSquare, loser: position.turn };
-    switch (room.reason) {
-      case 'checkmate':
-        return {
-          ...base,
-          kind: 'checkmate',
-          subtitle: `${this.nameOf(opposite(position.turn))} wins`,
-        };
-      case 'stalemate':
-        return { ...base, kind: 'stalemate', subtitle: 'No legal moves. It\u2019s a draw.' };
-      case 'resign':
-        return { ...base, kind: 'resign', subtitle: `${loserName} resigns` };
-      case 'timeout':
-        return room.result === 'draw'
-          ? { ...base, kind: 'draw', subtitle: 'Time ran out against a lone king' }
-          : { ...base, kind: 'timeout', subtitle: `${loserName} ran out of time` };
-      case 'threefold':
-        return { ...base, kind: 'draw', subtitle: 'Threefold repetition' };
-      case 'insufficient':
-        return { ...base, kind: 'draw', subtitle: 'Not enough pieces left to mate' };
-      case 'fifty':
-        return { ...base, kind: 'draw', subtitle: 'Fifty-move rule' };
-      case 'agreement':
-        return { ...base, kind: 'draw', subtitle: 'Draw agreed' };
-      default:
-        return null;
-    }
-  }
-
-  private celebrate(room: Room): void {
-    const side = this.mySide();
-    if (room.result === 'aborted') return;
-    if (room.result === 'draw') {
-      this.sounds.play('draw');
-    } else if (!side || room.result === side) {
-      this.sounds.play('win');
-      if (side) {
-        this.later(() => burst(this.document.querySelector('app-game-over h2')), 60);
-      }
-    } else {
-      this.sounds.play('lose');
-    }
   }
 
   private playerOf(side: Side): PlayerSnapshot | null {

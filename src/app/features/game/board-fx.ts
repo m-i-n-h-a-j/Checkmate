@@ -6,6 +6,12 @@ import { Side } from '../../core/models';
 
 export type Finale = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resign';
 
+/** Who did something, for captions. `you` switches to second person ("You take the queen"). */
+export interface Subject {
+  name: string;
+  you: boolean;
+}
+
 type Tone = 'gold' | 'pink' | 'ice';
 
 const ROLE: Record<PieceSymbol, string> = {
@@ -80,7 +86,7 @@ export class BoardFx {
   }
 
   /** Effect for a captured piece. Returns how long it runs, in ms. */
-  capture(capture: Capture, capturer: string, quiet = false): number {
+  capture(capture: Capture, capturer: Subject, quiet = false): number {
     if (this.reducedMotion || capture.piece === 'p' || capture.piece === 'k') return 0;
     const major = capture.piece === 'q' || capture.piece === 'r';
     this.later(() => {
@@ -97,13 +103,20 @@ export class BoardFx {
     const callout = CALLOUT[capture.piece];
     if (callout && !quiet) {
       this.later(() => this.title(callout.title, 'gold', 1600), 80);
-      this.later(() => this.subtitle(`${capturer} takes ${callout.noun}`, 1400), 240);
+      const takes = `${capturer.name} ${capturer.you ? 'take' : 'takes'} ${callout.noun}`;
+      this.later(() => this.subtitle(takes, 1400), 240);
     }
     return major ? 1700 : 1100;
   }
 
   /** A pawn reaching the last rank: a pillar of light, the pawn spins away and the new piece lands. */
-  promotion(square: string, piece: PieceSymbol, color: Side, mover: string, quiet = false): number {
+  promotion(
+    square: string,
+    piece: PieceSymbol,
+    color: Side,
+    mover: Subject,
+    quiet = false,
+  ): number {
     if (this.reducedMotion) return 0;
     const duration = 1500;
     this.later(() => {
@@ -131,7 +144,8 @@ export class BoardFx {
     if (!quiet) {
       const noun = ROLE[piece];
       this.later(() => this.title(PROMOTED[piece] ?? 'PROMOTED!', 'gold', 1500), 300);
-      this.later(() => this.subtitle(`${mover}'s pawn becomes a ${noun}`, 1300), 520);
+      const whose = mover.you ? 'Your' : `${mover.name}'s`;
+      this.later(() => this.subtitle(`${whose} pawn becomes a ${noun}`, 1300), 520);
     }
     return duration;
   }
