@@ -5,10 +5,11 @@ import { RoomsService } from '../../core/rooms/rooms.service';
 import { GoogleMark } from '../../shared/ui/google-mark';
 import { MatchCard } from '../../shared/ui/match-card';
 import { ToastService } from '../../shared/ui/toast.service';
+import { HomeSky } from './home-sky';
 
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, MatchCard, GoogleMark],
+  imports: [RouterLink, MatchCard, GoogleMark, HomeSky],
   templateUrl: './home.html',
 })
 export class Home {

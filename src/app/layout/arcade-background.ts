@@ -161,6 +161,10 @@ import { EffectsService } from '../core/settings/effects.service';
       background-position: center bottom;
       animation: floor-roll 4s linear infinite;
     }
+    /* The home page's video sky replaces the striped king; the floor and horizon stay. */
+    :host-context(.sky-video) .sunset {
+      opacity: 0;
+    }
     .still .floor {
       animation: none;
     }
