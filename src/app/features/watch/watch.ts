@@ -3,12 +3,12 @@ import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { RoomsService, roleIn } from '../../core/rooms/rooms.service';
 import { clock } from '../../core/util/time';
-import { BoardPlaceholder } from '../../shared/ui/board-placeholder';
 import { PlayerCard } from '../../shared/ui/player-card';
+import { GameView } from '../game/game-view';
 
 @Component({
   selector: 'app-watch',
-  imports: [RouterLink, PlayerCard, BoardPlaceholder],
+  imports: [RouterLink, PlayerCard, GameView],
   templateUrl: './watch.html',
 })
 export class Watch {
@@ -19,6 +19,10 @@ export class Watch {
   protected readonly room = computed(() => {
     const state = this.state();
     return state.status === 'ready' ? state.room : null;
+  });
+  protected readonly hasGame = computed(() => {
+    const room = this.room();
+    return (room?.status === 'live' || room?.status === 'finished') && !!room.whiteUid;
   });
   protected readonly isPlayer = computed(() => {
     const room = this.room();

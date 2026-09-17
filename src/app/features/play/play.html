@@ -44,7 +44,8 @@
               ring="pink"
             />
             <p class="min-w-0 flex-1 basis-40">
-              <span class="font-semibold">{{ room.host.displayName }}</span> challenged you
+              <span class="font-semibold">{{ room.host.displayName }}</span>
+              {{ room.type === 'rematch' ? 'wants a rematch' : 'challenged you' }}
             </p>
             <div class="flex w-full justify-end gap-2 sm:w-auto">
               <button

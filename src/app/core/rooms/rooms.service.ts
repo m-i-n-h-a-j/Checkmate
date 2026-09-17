@@ -16,7 +16,10 @@ import {
 import { AuthService } from '../auth/auth.service';
 import { AppError } from '../errors';
 import { FIRESTORE } from '../firebase/firebase';
-import { PlayerSnapshot, Room, RoomState, snapshotOf } from '../models';
+import { ServerClock } from '../game/server-clock.service';
+import { START_FEN } from '../game/notation';
+import { DEFAULT_TIME_CONTROL } from '../game/time-controls';
+import { HostColor, PlayerSnapshot, Room, RoomState, TimeControl, snapshotOf } from '../models';
 import { ProfileService } from '../profile/profile.service';
 import { isRoomCode, pairId, roomCode } from '../util/ids';
 
@@ -25,8 +28,38 @@ const WAITING_TTL = 24 * HOUR;
 const LIVE_TTL = 7 * 24 * HOUR;
 const LIVE_VISIBLE_FOR = 6 * HOUR;
 
+/** Game fields a new room starts with. Mirrors the create rule in firestore.rules. */
+const NEW_GAME = {
+  whiteUid: null,
+  blackUid: null,
+  moves: [],
+  fen: START_FEN,
+  whiteMs: null,
+  blackMs: null,
+  lastMoveAt: null,
+  prevMoveAt: null,
+  drawOffer: null,
+  result: null,
+  reason: null,
+  whiteRatingDiff: null,
+  blackRatingDiff: null,
+  rematch: null,
+} satisfies Partial<Room>;
+
+/** Defaults for rooms created before games shipped. */
+const LEGACY_DEFAULTS: Partial<Room> = {
+  ...NEW_GAME,
+  timeControl: DEFAULT_TIME_CONTROL,
+  hostColor: 'random',
+  rematchOf: null,
+};
+
 export function toRoom(snap: DocumentSnapshot): Room {
-  return { ...(snap.data({ serverTimestamps: 'estimate' }) as Omit<Room, 'code'>), code: snap.id };
+  return {
+    ...LEGACY_DEFAULTS,
+    ...(snap.data({ serverTimestamps: 'estimate' }) as Omit<Room, 'code'>),
+    code: snap.id,
+  };
 }
 
 export type RoomRole = 'host' | 'guest' | 'invited' | 'visitor';
@@ -50,6 +83,7 @@ export class RoomsService {
   private readonly db = inject(FIRESTORE);
   private readonly auth = inject(AuthService);
   private readonly profiles = inject(ProfileService);
+  private readonly serverClock = inject(ServerClock);
 
   private readonly hostedRooms = signal<Room[]>([]);
   private readonly joinedRooms = signal<Room[]>([]);
@@ -61,7 +95,7 @@ export class RoomsService {
     return [...this.hostedRooms(), ...this.joinedRooms()].filter((room) => isFresh(room, now));
   });
 
-  /** Friend challenges waiting for this player's answer. */
+  /** Friend challenges and rematch offers waiting for this player's answer. */
   readonly incomingChallenges = computed(() => {
     const now = Date.now();
     return this.challengeRooms().filter((room) => isFresh(room, now) && room.guestUid === null);
@@ -129,10 +163,15 @@ export class RoomsService {
       state.set({ status: 'loading' });
       const unsubscribe = onSnapshot(
         doc(this.db, 'rooms', value),
-        (snap) =>
-          state.set(
-            snap.exists() ? { status: 'ready', room: toRoom(snap) } : { status: 'missing' },
-          ),
+        (snap) => {
+          if (!snap.exists()) {
+            state.set({ status: 'missing' });
+            return;
+          }
+          const room = toRoom(snap);
+          this.serverClock.observe(room, snap.metadata.hasPendingWrites);
+          state.set({ status: 'ready', room });
+        },
         () => state.set({ status: 'missing' }),
       );
       onCleanup(unsubscribe);
@@ -162,6 +201,7 @@ export class RoomsService {
         tx.set(ref, {
           code,
           ...fields,
+          ...NEW_GAME,
           status: 'waiting',
           hostUid: me.uid,
           host: me,
@@ -174,6 +214,9 @@ export class RoomsService {
           endedAt: null,
           endedBy: null,
           expiresAt: Timestamp.fromMillis(Date.now() + WAITING_TTL),
+          timeControl: DEFAULT_TIME_CONTROL,
+          hostColor: 'random',
+          rematchOf: null,
         });
         return true;
       });
@@ -231,7 +274,7 @@ export class RoomsService {
       if (room.guestUid) {
         throw new AppError('Both seats in that room are taken.');
       }
-      if (room.type === 'challenge' && room.invitedUid !== me.uid) {
+      if (room.type !== 'code' && room.invitedUid !== me.uid) {
         throw new AppError(`That room is ${room.host.displayName}'s challenge for someone else.`);
       }
       tx.update(ref, { guestUid: me.uid, guest: me });
@@ -239,7 +282,23 @@ export class RoomsService {
     return code;
   }
 
-  /** Marks this player ready. When both are ready the match goes live for everyone to watch. */
+  /** Host sets the clock and their color. Both players have to ready up again. */
+  async updateSettings(
+    room: Room,
+    settings: { timeControl: TimeControl; hostColor: HostColor },
+  ): Promise<void> {
+    await updateDoc(doc(this.db, 'rooms', room.code), {
+      timeControl: settings.timeControl,
+      hostColor: settings.hostColor,
+      hostReady: false,
+      guestReady: false,
+    });
+  }
+
+  /**
+   * Marks this player ready. When both are ready the match goes live for everyone to watch: colors
+   * are dealt and both clocks are set.
+   */
   async setReady(code: string, ready: boolean): Promise<void> {
     const uid = this.auth.uid();
     const ref = doc(this.db, 'rooms', code);
@@ -256,11 +315,18 @@ export class RoomsService {
       const key = role === 'host' ? 'hostReady' : 'guestReady';
       const opponentReady = role === 'host' ? room.guestReady : room.hostReady;
       if (ready && opponentReady) {
+        const hostWhite =
+          room.hostColor === 'random' ? Math.random() < 0.5 : room.hostColor === 'white';
+        const clock = room.timeControl.initial * 1000;
         tx.update(ref, {
           [key]: true,
           status: 'live',
           startedAt: serverTimestamp(),
           expiresAt: Timestamp.fromMillis(Date.now() + LIVE_TTL),
+          whiteUid: hostWhite ? room.hostUid : room.guestUid,
+          blackUid: hostWhite ? room.guestUid : room.hostUid,
+          whiteMs: clock,
+          blackMs: clock,
         });
       } else {
         tx.update(ref, { [key]: ready });
@@ -268,14 +334,12 @@ export class RoomsService {
     });
   }
 
-  /** Host closes a waiting room, a guest gives up their seat, or either player ends a live match. */
+  /** Host closes a waiting room, or a guest gives up their seat. Live games end by resigning or aborting. */
   async leave(room: Room): Promise<void> {
     const uid = this.auth.uid();
     const role = roleIn(room, uid);
     const ref = doc(this.db, 'rooms', room.code);
-    if (room.status === 'live' && (role === 'host' || role === 'guest')) {
-      await updateDoc(ref, { status: 'finished', endedAt: serverTimestamp(), endedBy: uid });
-    } else if (room.status === 'waiting' && role === 'host') {
+    if (room.status === 'waiting' && role === 'host') {
       await updateDoc(ref, { status: 'cancelled', endedAt: serverTimestamp(), endedBy: uid });
     } else if (room.status === 'waiting' && role === 'guest') {
       await updateDoc(ref, { guestUid: null, guest: null, guestReady: false, hostReady: false });
@@ -288,5 +352,62 @@ export class RoomsService {
       endedAt: serverTimestamp(),
       endedBy: this.auth.uid(),
     });
+  }
+
+  /**
+   * Offers a rematch after a finished game: a new room with the same clock and colors swapped,
+   * where this player is already ready. Returns the new room's code, or the one the opponent
+   * already opened.
+   */
+  async offerRematch(finished: Room): Promise<string> {
+    const me = this.me();
+    const opponent = finished.hostUid === me.uid ? finished.guest : finished.host;
+    if (!opponent || finished.status !== 'finished') {
+      throw new AppError('A rematch needs a finished game with two players.');
+    }
+    const oldRef = doc(this.db, 'rooms', finished.code);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = roomCode();
+      const ref = doc(this.db, 'rooms', code);
+      const result = await runTransaction(this.db, async (tx) => {
+        const current = toRoom(await tx.get(oldRef));
+        if (current.rematch) {
+          return current.rematch;
+        }
+        if ((await tx.get(ref)).exists()) {
+          return null;
+        }
+        const wasWhite = current.whiteUid === me.uid;
+        tx.set(ref, {
+          code,
+          type: 'rematch',
+          ...NEW_GAME,
+          status: 'waiting',
+          hostUid: me.uid,
+          host: me,
+          guestUid: null,
+          guest: null,
+          invitedUid: opponent.uid,
+          invited: snapshotOf(opponent),
+          friendshipId: null,
+          hostReady: true,
+          guestReady: false,
+          createdAt: serverTimestamp(),
+          startedAt: null,
+          endedAt: null,
+          endedBy: null,
+          expiresAt: Timestamp.fromMillis(Date.now() + WAITING_TTL),
+          timeControl: current.timeControl,
+          hostColor: current.whiteUid ? (wasWhite ? 'black' : 'white') : 'random',
+          rematchOf: current.code,
+        });
+        tx.update(oldRef, { rematch: code });
+        return code;
+      });
+      if (result) {
+        return result;
+      }
+    }
+    throw new AppError("Couldn't find a free room code. Try again.");
   }
 }

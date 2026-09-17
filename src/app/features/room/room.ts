@@ -17,16 +17,17 @@ import { Room, RoomStatus } from '../../core/models';
 import { RoomsService, roleIn } from '../../core/rooms/rooms.service';
 import { burst } from '../../shared/fx/burst';
 import { Avatar } from '../../shared/ui/avatar';
-import { BoardPlaceholder } from '../../shared/ui/board-placeholder';
 import { Icon } from '../../shared/ui/icon';
 import { PlayerCard } from '../../shared/ui/player-card';
 import { ToastService } from '../../shared/ui/toast.service';
+import { GameView } from '../game/game-view';
+import { MatchSettings } from './match-settings';
 
 const COUNTDOWN = ['3', '2', '1', 'GO'];
 
 @Component({
   selector: 'app-room',
-  imports: [RouterLink, Avatar, PlayerCard, BoardPlaceholder, Icon],
+  imports: [RouterLink, Avatar, PlayerCard, Icon, GameView, MatchSettings],
   templateUrl: './room.html',
   styles: `
     .countdown-step {
@@ -91,6 +92,11 @@ export class RoomPage {
     if (!this.myReady() && opponentReady) return `${name} is ready. Your move.`;
     return 'The match goes live when you both hit ready.';
   });
+  /** Live and finished games show the board; older finished rooms without a game don't. */
+  protected readonly hasGame = computed(() => {
+    const room = this.room();
+    return (room?.status === 'live' || room?.status === 'finished') && !!room.whiteUid;
+  });
   protected readonly overMessage = computed(() => {
     const room = this.room();
     if (!room) return '';
@@ -100,19 +106,16 @@ export class RoomPage {
           ? 'You closed this room.'
           : `${room.host.displayName} closed this room.`;
       case 'declined':
-        return `${room.invited?.displayName ?? 'Your friend'} declined the challenge.`;
-      default: {
-        if (room.endedBy === this.auth.uid()) return 'You ended the match.';
-        const name =
-          room.endedBy === room.hostUid ? room.host.displayName : room.guest?.displayName;
-        return `${name ?? 'Your opponent'} ended the match.`;
-      }
+        return room.type === 'rematch'
+          ? `${room.invited?.displayName ?? 'Your opponent'} declined the rematch.`
+          : `${room.invited?.displayName ?? 'Your friend'} declined the challenge.`;
+      default:
+        return 'This match has ended.';
     }
   });
 
   protected readonly countdown = signal<string | null>(null);
   protected readonly busy = signal(false);
-  protected readonly leaveArmed = signal(false);
   protected readonly copied = signal<'code' | 'invite' | 'watch' | null>(null);
 
   private readonly vs = viewChild<ElementRef<HTMLElement>>('vs');
@@ -121,10 +124,10 @@ export class RoomPage {
   constructor() {
     inject(DestroyRef).onDestroy(() => this.timers.forEach(clearTimeout));
 
-    // Spectators who open a live room link belong on the watch page.
+    // Spectators who open a room link for a game belong on the watch page.
     effect(() => {
       const room = this.room();
-      if (room?.status === 'live' && !this.seated()) {
+      if (room && this.hasGame() && !this.seated()) {
         untracked(() => this.router.navigate(['/watch', room.code], { replaceUrl: true }));
       }
     });
@@ -186,11 +189,6 @@ export class RoomPage {
   }
 
   protected leave(room: Room): void {
-    if (room.status === 'live' && !this.leaveArmed()) {
-      this.leaveArmed.set(true);
-      this.later(() => this.leaveArmed.set(false), 3000);
-      return;
-    }
     const role = this.role();
     void this.act(async () => {
       await this.rooms.leave(room);

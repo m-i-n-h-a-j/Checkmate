@@ -70,6 +70,19 @@
                 }
               </p>
             </div>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              class="nav-link w-full"
+              [attr.aria-checked]="effects.full()"
+              (click)="effects.toggle()"
+            >
+              <app-icon [name]="effects.full() ? 'sparkles' : 'sparkles-off'" [size]="18" />
+              <span class="flex-1 text-left">Heavy effects</span>
+              <span class="text-sm" [class.text-go]="effects.full()">{{
+                effects.full() ? 'On' : 'Off'
+              }}</span>
+            </button>
             <a
               routerLink="/profile"
               role="menuitem"
@@ -103,7 +116,7 @@
 
 <nav
   class="fixed inset-x-0 bottom-0 z-40 border-t border-line/70 bg-void/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
-  aria-label="Main"
+  aria-label="Sections"
 >
   <div class="mx-auto grid max-w-md grid-cols-3">
     <a

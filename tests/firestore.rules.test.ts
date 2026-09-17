@@ -76,6 +76,8 @@ async function seedFriends(a: string, b: string): Promise<void> {
   );
 }
 
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
 function room(code: string, host: string, extra: Record<string, unknown> = {}) {
   return {
     code,
@@ -95,6 +97,23 @@ function room(code: string, host: string, extra: Record<string, unknown> = {}) {
     endedAt: null,
     endedBy: null,
     expiresAt: Timestamp.fromMillis(Date.now() + 86_400_000),
+    timeControl: { initial: 600, increment: 0 },
+    hostColor: 'random',
+    whiteUid: null,
+    blackUid: null,
+    moves: [],
+    fen: START_FEN,
+    whiteMs: null,
+    blackMs: null,
+    lastMoveAt: null,
+    prevMoveAt: null,
+    drawOffer: null,
+    result: null,
+    reason: null,
+    whiteRatingDiff: null,
+    blackRatingDiff: null,
+    rematchOf: null,
+    rematch: null,
     ...extra,
   };
 }
@@ -421,29 +440,59 @@ describe('rooms', () => {
       status: 'live',
       startedAt: serverTimestamp(),
       expiresAt: Timestamp.fromMillis(Date.now() + 1e8),
+      whiteUid: 'bob',
+      blackUid: 'alice',
+      whiteMs: 600_000,
+      blackMs: 600_000,
     };
 
     await assertFails(updateDoc(doc(as('alice'), 'rooms', 'ABC234'), { hostReady: true, ...live }));
     await assertSucceeds(updateDoc(doc(as('bob'), 'rooms', 'ABC234'), { guestReady: true }));
     await assertFails(updateDoc(doc(as('eve'), 'rooms', 'ABC234'), { hostReady: true, ...live }));
+    await assertFails(
+      updateDoc(doc(as('alice'), 'rooms', 'ABC234'), { hostReady: true, ...live, whiteMs: 900_000 }),
+    );
     await assertSucceeds(
       updateDoc(doc(as('alice'), 'rooms', 'ABC234'), { hostReady: true, ...live }),
     );
   });
 
-  it('lets only the players end a live match', async () => {
+  it("deals colors the way the host asked", async () => {
     await seedRoom(
-      'LIVE22',
-      room('LIVE22', 'alice', {
-        status: 'live',
+      'ABC234',
+      room('ABC234', 'alice', {
         guestUid: 'bob',
         guest: player('bob'),
-        startedAt: Timestamp.now(),
+        hostReady: true,
+        hostColor: 'white',
       }),
     );
-    const end = (uid: string) => ({ status: 'finished', endedAt: serverTimestamp(), endedBy: uid });
-    await assertFails(updateDoc(doc(as('eve'), 'rooms', 'LIVE22'), end('eve')));
-    await assertSucceeds(updateDoc(doc(as('bob'), 'rooms', 'LIVE22'), end('bob')));
+    const live = (white: string, black: string) => ({
+      guestReady: true,
+      status: 'live',
+      startedAt: serverTimestamp(),
+      expiresAt: Timestamp.fromMillis(Date.now() + 1e8),
+      whiteUid: white,
+      blackUid: black,
+      whiteMs: 600_000,
+      blackMs: 600_000,
+    });
+    await assertFails(updateDoc(doc(as('bob'), 'rooms', 'ABC234'), live('bob', 'alice')));
+    await assertFails(updateDoc(doc(as('bob'), 'rooms', 'ABC234'), live('bob', 'bob')));
+    await assertSucceeds(updateDoc(doc(as('bob'), 'rooms', 'ABC234'), live('alice', 'bob')));
+  });
+
+  it('lets only the host change the clock and colors while waiting', async () => {
+    await seedRoom('ABC234', room('ABC234', 'alice', { guestUid: 'bob', guest: player('bob') }));
+    const settings = { timeControl: { initial: 180, increment: 2 }, hostColor: 'black' };
+    await assertFails(updateDoc(doc(as('bob'), 'rooms', 'ABC234'), settings));
+    await assertFails(
+      updateDoc(doc(as('alice'), 'rooms', 'ABC234'), {
+        ...settings,
+        timeControl: { initial: 420, increment: 0 },
+      }),
+    );
+    await assertSucceeds(updateDoc(doc(as('alice'), 'rooms', 'ABC234'), settings));
   });
 
   it("allows the app's own room listeners", async () => {
@@ -463,5 +512,244 @@ describe('rooms', () => {
   it('never deletes rooms from the client', async () => {
     await seedRoom('ABC234', room('ABC234', 'alice'));
     await assertFails(deleteDoc(doc(as('alice'), 'rooms', 'ABC234')));
+  });
+});
+
+describe('games', () => {
+  const ago = (ms: number) => Timestamp.fromMillis(Date.now() - ms);
+  type Stats = typeof stats;
+
+  beforeEach(async () => {
+    await seedUser('alice');
+    await seedUser('bob');
+    await seedUser('eve');
+  });
+
+  /** Alice plays White against Bob in a 3+2 game. */
+  function game(extra: Record<string, unknown> = {}) {
+    return room('GAME22', 'alice', {
+      status: 'live',
+      guestUid: 'bob',
+      guest: player('bob'),
+      startedAt: Timestamp.now(),
+      timeControl: { initial: 180, increment: 2 },
+      whiteUid: 'alice',
+      blackUid: 'bob',
+      whiteMs: 180_000,
+      blackMs: 180_000,
+      ...extra,
+    });
+  }
+
+  const ref = (uid: string) => doc(as(uid), 'rooms', 'GAME22');
+
+  function finish(
+    uid: string,
+    fields: Record<string, unknown>,
+    next: { alice: Stats; bob: Stats },
+  ): Promise<void> {
+    const db = as(uid);
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'rooms', 'GAME22'), {
+      status: 'finished',
+      endedAt: serverTimestamp(),
+      endedBy: uid,
+      whiteRatingDiff: next.alice.rating - 1200,
+      blackRatingDiff: next.bob.rating - 1200,
+      ...fields,
+    });
+    batch.update(doc(db, 'users', 'alice'), { stats: next.alice, lastGame: 'GAME22' });
+    batch.update(doc(db, 'users', 'bob'), { stats: next.bob, lastGame: 'GAME22' });
+    return batch.commit();
+  }
+
+  const aliceWins = {
+    alice: { ...stats, wins: 1, rating: 1216 },
+    bob: { ...stats, losses: 1, rating: 1184 },
+  };
+  const bobWins = {
+    alice: { ...stats, losses: 1, rating: 1184 },
+    bob: { ...stats, wins: 1, rating: 1216 },
+  };
+  const drawn = { alice: { ...stats, draws: 1 }, bob: { ...stats, draws: 1 } };
+
+  it('lets only the side to move play', async () => {
+    await seedRoom('GAME22', game());
+    const move = { moves: ['e2e4'], fen: 'x', lastMoveAt: serverTimestamp() };
+    await assertFails(updateDoc(ref('bob'), move));
+    await assertFails(updateDoc(ref('eve'), move));
+    await assertFails(updateDoc(ref('alice'), { ...move, moves: ['e2e9'] }));
+    await assertSucceeds(updateDoc(ref('alice'), move));
+  });
+
+  it('keeps the move list append-only', async () => {
+    const lastMoveAt = ago(4_000);
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], lastMoveAt, prevMoveAt: ago(9_000) }));
+    const move = { fen: 'x', lastMoveAt: serverTimestamp(), prevMoveAt: lastMoveAt };
+    await assertFails(updateDoc(ref('alice'), { ...move, moves: ['d2d4', 'e7e5', 'g1f3'] }));
+    await assertFails(
+      updateDoc(ref('alice'), { ...move, moves: ['e2e4', 'e7e5', 'g1f3', 'b8c6'] }),
+    );
+    await assertFails(
+      updateDoc(ref('alice'), { ...move, moves: ['e2e4', 'e7e5', 'g1f3'], prevMoveAt: ago(1) }),
+    );
+    await assertSucceeds(updateDoc(ref('alice'), { ...move, moves: ['e2e4', 'e7e5', 'g1f3'] }));
+  });
+
+  it("settles the opponent's clock from server timestamps", async () => {
+    // White's second move took exactly 4 seconds.
+    const lastMoveAt = Timestamp.fromMillis(Date.now() - 1_000);
+    const prevMoveAt = Timestamp.fromMillis(lastMoveAt.toMillis() - 4_000);
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5', 'g1f3'], lastMoveAt, prevMoveAt }));
+    const move = {
+      moves: ['e2e4', 'e7e5', 'g1f3', 'b8c6'],
+      fen: 'x',
+      lastMoveAt: serverTimestamp(),
+      prevMoveAt: lastMoveAt,
+    };
+    await assertFails(updateDoc(ref('bob'), move));
+    await assertFails(updateDoc(ref('bob'), { ...move, whiteMs: 180_000 }));
+    await assertSucceeds(updateDoc(ref('bob'), { ...move, whiteMs: 178_000 }));
+  });
+
+  it('rejects a move once the mover is out of time', async () => {
+    const lastMoveAt = ago(5_000);
+    await seedRoom(
+      'GAME22',
+      game({ moves: ['e2e4', 'e7e5'], whiteMs: 1_000, lastMoveAt, prevMoveAt: ago(8_000) }),
+    );
+    await assertFails(
+      updateDoc(ref('alice'), {
+        moves: ['e2e4', 'e7e5', 'g1f3'],
+        fen: 'x',
+        lastMoveAt: serverTimestamp(),
+        prevMoveAt: lastMoveAt,
+      }),
+    );
+  });
+
+  it('allows aborting only before both players have moved', async () => {
+    const abort = (uid: string) => ({
+      status: 'finished',
+      result: 'aborted',
+      reason: 'aborted',
+      endedAt: serverTimestamp(),
+      endedBy: uid,
+    });
+    await seedRoom('GAME22', game({ moves: ['e2e4'], lastMoveAt: ago(1_000) }));
+    await assertFails(updateDoc(ref('eve'), abort('eve')));
+    await assertSucceeds(updateDoc(ref('bob'), abort('bob')));
+
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], lastMoveAt: ago(1_000) }));
+    await assertFails(updateDoc(ref('bob'), abort('bob')));
+  });
+
+  it('makes a resignation record both players stats', async () => {
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], lastMoveAt: ago(1_000) }));
+    await assertFails(
+      updateDoc(ref('bob'), {
+        status: 'finished',
+        result: 'white',
+        reason: 'resign',
+        endedAt: serverTimestamp(),
+        endedBy: 'bob',
+      }),
+    );
+    // Resigning can't hand yourself the win or soften the rating loss.
+    await assertFails(finish('bob', { result: 'black', reason: 'resign' }, bobWins));
+    await assertFails(
+      finish(
+        'bob',
+        { result: 'white', reason: 'resign' },
+        { ...aliceWins, bob: { ...aliceWins.bob, rating: 1200 } },
+      ),
+    );
+    await assertSucceeds(finish('bob', { result: 'white', reason: 'resign' }, aliceWins));
+  });
+
+  it('never changes stats outside a game that ends in the same write', async () => {
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], lastMoveAt: ago(1_000) }));
+    await assertFails(
+      updateDoc(doc(as('alice'), 'users', 'alice'), {
+        stats: aliceWins.alice,
+        lastGame: 'GAME22',
+      }),
+    );
+  });
+
+  it('ends a game on a mating move', async () => {
+    const lastMoveAt = Timestamp.fromMillis(Date.now() - 1_000);
+    const prevMoveAt = Timestamp.fromMillis(lastMoveAt.toMillis() - 3_000);
+    await seedRoom('GAME22', game({ moves: ['f2f3', 'e7e5', 'g2g4'], lastMoveAt, prevMoveAt }));
+    const mate = {
+      moves: ['f2f3', 'e7e5', 'g2g4', 'd8h4'],
+      fen: 'y',
+      lastMoveAt: serverTimestamp(),
+      prevMoveAt: lastMoveAt,
+      whiteMs: 179_000,
+      reason: 'checkmate',
+    };
+    await assertFails(finish('bob', { ...mate, result: 'white' }, aliceWins));
+    await assertFails(finish('alice', { ...mate, result: 'black' }, bobWins));
+    await assertSucceeds(finish('bob', { ...mate, result: 'black' }, bobWins));
+  });
+
+  it('handles draw offers', async () => {
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], lastMoveAt: ago(1_000) }));
+    await assertFails(updateDoc(ref('alice'), { drawOffer: 'bob' }));
+    await assertFails(updateDoc(ref('eve'), { drawOffer: 'eve' }));
+    await assertSucceeds(updateDoc(ref('alice'), { drawOffer: 'alice' }));
+    await assertFails(finish('alice', { result: 'draw', reason: 'agreement' }, drawn));
+    await assertSucceeds(finish('bob', { result: 'draw', reason: 'agreement' }, drawn));
+  });
+
+  it('lets a player decline a draw offer', async () => {
+    await seedRoom(
+      'GAME22',
+      game({ moves: ['e2e4', 'e7e5'], lastMoveAt: ago(1_000), drawOffer: 'alice' }),
+    );
+    await assertSucceeds(updateDoc(ref('bob'), { drawOffer: null }));
+  });
+
+  it('calls the flag only when the server clock says time is up', async () => {
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], lastMoveAt: ago(5_000) }));
+    await assertFails(finish('bob', { result: 'black', reason: 'timeout' }, bobWins));
+
+    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], whiteMs: 4_000, lastMoveAt: ago(5_000) }));
+    // The flagged player can't turn their loss into a draw.
+    await assertFails(finish('alice', { result: 'draw', reason: 'timeout' }, drawn));
+    await assertSucceeds(finish('alice', { result: 'black', reason: 'timeout' }, bobWins));
+  });
+
+  it('links a rematch between the same two players', async () => {
+    await seedRoom('GAME22', game({ status: 'finished', result: 'white', reason: 'resign' }));
+    const offer = (uid: string, invited: string, link = true) => {
+      const db = as(uid);
+      const batch = writeBatch(db);
+      batch.set(
+        doc(db, 'rooms', 'REMA22'),
+        room('REMA22', uid, {
+          type: 'rematch',
+          hostReady: true,
+          invitedUid: invited,
+          invited: player(invited),
+          rematchOf: 'GAME22',
+        }),
+      );
+      if (link) {
+        batch.update(doc(db, 'rooms', 'GAME22'), { rematch: 'REMA22' });
+      }
+      return batch.commit();
+    };
+    await assertFails(offer('eve', 'alice'));
+    await assertFails(offer('bob', 'eve'));
+    await assertFails(offer('bob', 'alice', false));
+    await assertSucceeds(offer('bob', 'alice'));
+    await assertFails(
+      updateDoc(doc(as('eve'), 'rooms', 'REMA22'), { guestUid: 'eve', guest: player('eve') }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(as('alice'), 'rooms', 'REMA22'), { guestUid: 'alice', guest: player('alice') }),
+    );
   });
 });

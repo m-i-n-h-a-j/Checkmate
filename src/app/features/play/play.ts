@@ -71,7 +71,15 @@ export class Play {
   }
 
   protected accept(room: Room): void {
-    void this.run(room.code, () => this.rooms.join(room.code));
+    void this.run(room.code, async () => {
+      const code = await this.rooms.join(room.code);
+      if (room.type === 'rematch') {
+        await this.router.navigate(['/room', code]);
+        await this.rooms.setReady(code, true);
+        return;
+      }
+      return code;
+    });
   }
 
   protected decline(room: Room): void {

@@ -1,7 +1,20 @@
 import { Component, input } from '@angular/core';
 
 export type IconName =
-  'watch' | 'play' | 'friends' | 'copy' | 'link' | 'user' | 'logout' | 'crown' | 'plus';
+  | 'watch'
+  | 'play'
+  | 'friends'
+  | 'copy'
+  | 'link'
+  | 'user'
+  | 'logout'
+  | 'crown'
+  | 'plus'
+  | 'flip'
+  | 'sound'
+  | 'sound-off'
+  | 'sparkles'
+  | 'sparkles-off';
 
 /** Chunky 24px line icons drawn on a pixel grid. */
 @Component({
@@ -52,6 +65,23 @@ export type IconName =
         }
         @case ('plus') {
           <path d="M12 5v14M5 12h14" />
+        }
+        @case ('flip') {
+          <path d="M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4" />
+        }
+        @case ('sound') {
+          <path d="M3 9h4l5-4v14l-5-4H3V9ZM16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12" />
+        }
+        @case ('sound-off') {
+          <path d="M3 9h4l5-4v14l-5-4H3V9ZM16 9l6 6M22 9l-6 6" />
+        }
+        @case ('sparkles') {
+          <path
+            d="m10 4 1.8 5.2L17 11l-5.2 1.8L10 18l-1.8-5.2L3 11l5.2-1.8L10 4ZM19 2v4M17 4h4M19 17v4M17 19h4"
+          />
+        }
+        @case ('sparkles-off') {
+          <path d="m10 4 1.8 5.2L17 11l-5.2 1.8L10 18l-1.8-5.2L3 11l5.2-1.8L10 4ZM3 21 21 3" />
         }
       }
     </svg>

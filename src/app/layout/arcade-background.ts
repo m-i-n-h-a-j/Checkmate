@@ -1,10 +1,16 @@
-import { Component, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
+import { EffectsService } from '../core/settings/effects.service';
 
 /** Fixed backdrop: a striped king setting behind a neon chessboard floor that rolls toward the player. */
 @Component({
   selector: 'app-arcade-background',
   template: `
-    <div class="scene" [class.calm]="mode() === 'calm'" aria-hidden="true">
+    <div
+      class="scene"
+      [class.calm]="mode() === 'calm'"
+      [class.still]="!effects.full()"
+      aria-hidden="true"
+    >
       <div class="sky"></div>
       <div class="sunset"><span class="king">♚</span></div>
       <div class="floor-wrap"><div class="floor"></div></div>
@@ -155,6 +161,9 @@ import { Component, input } from '@angular/core';
       background-position: center bottom;
       animation: floor-roll 4s linear infinite;
     }
+    .still .floor {
+      animation: none;
+    }
     /* One checker period toward the player, so the loop is seamless. */
     @keyframes floor-roll {
       from {
@@ -167,5 +176,6 @@ import { Component, input } from '@angular/core';
   `,
 })
 export class ArcadeBackground {
+  protected readonly effects = inject(EffectsService);
   readonly mode = input<'hero' | 'calm'>('hero');
 }

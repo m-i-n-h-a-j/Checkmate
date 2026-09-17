@@ -1,0 +1,210 @@
+/*
+ * Big-moment effects drawn over the board (see BoardFx). Everything here is a static look:
+ * the motion comes from Web Animations that only touch transform and opacity, so it stays on
+ * the compositor even on integrated graphics.
+ */
+.board-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  perspective: 900px;
+  /* Debris may fly a little past the edges, but never over the clocks or out into the page,
+     where it would grow the scroll area mid-effect. */
+  overflow: clip;
+  overflow-clip-margin: 20px;
+}
+
+.board-fx > * {
+  position: absolute;
+  backface-visibility: visible;
+  will-change: transform, opacity;
+}
+
+/* ---------- Pieces and debris ---------- */
+.fx-ghost {
+  background-size: cover;
+  transform-origin: 50% 88%;
+}
+
+/* A voxel: lit from the top left so it reads as a little cube while it tumbles. */
+.fx-shard {
+  border-radius: 2px;
+  background: linear-gradient(
+    135deg,
+    var(--shard-light) 0 30%,
+    var(--shard) 30% 68%,
+    var(--shard-dark) 68%
+  );
+}
+.fx-shard-glow {
+  box-shadow: 0 0 8px var(--shard);
+}
+
+.fx-ring {
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    transparent 50%,
+    rgb(255 244 209 / 0.95) 55%,
+    rgb(255 201 74 / 0.8) 59%,
+    rgb(255 46 136 / 0.45) 64%,
+    transparent 70%
+  );
+}
+
+.fx-flash {
+  inset: 0;
+  border-radius: 6px;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(255 250 230 / 0.95),
+    rgb(255 201 74 / 0.5) 45%,
+    transparent 75%
+  );
+}
+.fx-frost {
+  inset: 0;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 30%, rgb(160 240 255 / 0.55) 100%),
+    rgb(34 240 255 / 0.12);
+}
+.fx-dim {
+  inset: 0;
+  border-radius: 6px;
+  background: rgb(5 2 11 / 0.55);
+}
+
+.fx-clip {
+  inset: 0;
+  overflow: hidden;
+  border-radius: 6px;
+}
+.fx-clip > .fx-rays {
+  position: absolute;
+  will-change: transform, opacity;
+}
+.fx-rays {
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgb(255 201 74 / 0.55) 0deg 9deg,
+    transparent 9deg 30deg
+  );
+  -webkit-mask-image: radial-gradient(circle, #000 18%, transparent 68%);
+  mask-image: radial-gradient(circle, #000 18%, transparent 68%);
+}
+
+/* A light column rising from a promotion square. */
+.fx-pillar {
+  transform-origin: 50% 100%;
+  border-radius: 999px 999px 8px 8px;
+  background: linear-gradient(
+    0deg,
+    rgb(255 250 230 / 0.95) 0%,
+    rgb(255 201 74 / 0.75) 18%,
+    rgb(255 46 136 / 0.35) 60%,
+    transparent 100%
+  );
+}
+.fx-spark {
+  border-radius: 1px;
+  background: #fff4d1;
+  box-shadow: 0 0 6px 1px rgb(255 201 74 / 0.95);
+}
+/* The freshly promoted piece glows gold while it lands. */
+.fx-crowned {
+  filter: drop-shadow(0 0 6px rgb(255 201 74 / 0.95));
+}
+
+.fx-snow {
+  border-radius: 1px;
+  background: #e6fbff;
+  box-shadow: 0 0 6px rgb(34 240 255 / 0.9);
+}
+
+/* ---------- Words ---------- */
+.fx-word,
+.fx-title,
+.fx-points,
+.fx-stamp,
+.fx-sub,
+.fx-crown {
+  left: 50%;
+  top: 50%;
+  white-space: nowrap;
+  line-height: 1;
+  transform-style: preserve-3d;
+}
+
+.fx-word {
+  display: flex;
+  justify-content: center;
+}
+.fx-word > span {
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
+.fx-word,
+.fx-title,
+.fx-points,
+.fx-stamp {
+  font-family: var(--font-pixel);
+}
+
+/* Extruded block letters: the stacked shadows are the letter's sides. */
+.fx-gold {
+  color: #ffe08a;
+  text-shadow:
+    0 1px 0 #f0b93f,
+    0 2px 0 #d99a26,
+    0 3px 0 #bd7f17,
+    0 4px 0 #9d6510,
+    0 5px 0 #7d4d0b,
+    0 6px 0 #5a3507,
+    0 9px 6px rgb(0 0 0 / 0.6);
+}
+.fx-pink {
+  color: #ff8fc0;
+  text-shadow:
+    0 1px 0 #ff5aa2,
+    0 2px 0 #f03a8a,
+    0 3px 0 #cf1f71,
+    0 4px 0 #a8145a,
+    0 5px 0 #7e0c43,
+    0 6px 0 #56062d,
+    0 9px 6px rgb(0 0 0 / 0.6);
+}
+.fx-ice {
+  color: #e9fdff;
+  text-shadow:
+    0 1px 0 #a8f6ff,
+    0 2px 0 #6fe6f5,
+    0 3px 0 #3cc7db,
+    0 4px 0 #22a0b8,
+    0 5px 0 #177a91,
+    0 6px 0 #0d5468,
+    0 9px 6px rgb(0 0 0 / 0.6);
+}
+
+.fx-sub {
+  padding: 0.35em 0.8em;
+  border: 1px solid rgb(255 201 74 / 0.55);
+  border-radius: 999px;
+  background: rgb(10 6 18 / 0.85);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+
+.fx-crown {
+  color: #ffd66b;
+  text-shadow:
+    0 2px 0 #bd7f17,
+    0 4px 0 #7d4d0b,
+    0 0 24px rgb(255 201 74 / 0.8);
+}

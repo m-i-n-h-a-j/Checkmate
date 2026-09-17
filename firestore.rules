@@ -58,17 +58,58 @@ service cloud.firestore {
         && incoming().createdAt == request.time
         && incoming().lastActive == request.time;
 
-      // Stats are never client-writable. A new username must be claimed in the same write.
-      allow update: if isSelf(uid)
-        && changed().hasOnly(['displayName', 'username', 'photoURL', 'onboardingSeen', 'lastActive'])
-        && validName(incoming().displayName)
-        && incoming().onboardingSeen is bool
-        && (!('lastActive' in changed()) || incoming().lastActive == request.time)
-        && (!('photoURL' in changed()) || incoming().photoURL == null || (incoming().photoURL is string && incoming().photoURL.size() < 2048))
-        && (!('username' in changed()) || (
-          incoming().username is string
-          && getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.uid == uid
-        ));
+      // Players edit their own profile, never their stats. A new username must be claimed in the same write.
+      function editsOwnProfile() {
+        return isSelf(uid)
+          && changed().hasOnly(['displayName', 'username', 'photoURL', 'onboardingSeen', 'lastActive'])
+          && validName(incoming().displayName)
+          && incoming().onboardingSeen is bool
+          && (!('lastActive' in changed()) || incoming().lastActive == request.time)
+          && (!('photoURL' in changed()) || incoming().photoURL == null || (incoming().photoURL is string && incoming().photoURL.size() < 2048))
+          && (!('username' in changed()) || (
+            incoming().username is string
+            && getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.uid == uid
+          ));
+      }
+
+      // Stats change only inside the write that ends a rated game this player sat in, so each game
+      // counts once. Either player may write both sides.
+      function recordsGame() {
+        return signedIn()
+          && changed().hasOnly(['stats', 'lastGame'])
+          && incoming().get('lastGame', null) is string
+          && gameEndsNow(incoming().lastGame);
+      }
+
+      function gameEndsNow(code) {
+        let before = get(/databases/$(database)/documents/rooms/$(code)).data;
+        let after = getAfter(/databases/$(database)/documents/rooms/$(code)).data;
+        return before.status == 'live'
+          && after.status == 'finished'
+          && after.result in ['white', 'black', 'draw']
+          && request.auth.uid in [after.whiteUid, after.blackUid]
+          && uid in [after.whiteUid, after.blackUid]
+          && statsFollow(after);
+      }
+
+      // Elo with K = 32. Mirrors src/app/core/game/rating.ts, allowing for rounding.
+      function statsFollow(game) {
+        let side = uid == game.whiteUid ? 'white' : 'black';
+        let opponent = side == 'white' ? game.blackUid : game.whiteUid;
+        let score = game.result == 'draw' ? 0.5 : (game.result == side ? 1.0 : 0.0);
+        let old = resource.data.stats;
+        let next = incoming().stats;
+        let theirs = get(/databases/$(database)/documents/users/$(opponent)).data.stats.rating;
+        let expected = 1.0 / (1.0 + math.pow(10.0, (theirs - old.rating) / 400.0));
+        return next.keys().hasOnly(['wins', 'losses', 'draws', 'rating'])
+          && next.wins == old.wins + (score == 1.0 ? 1 : 0)
+          && next.losses == old.losses + (score == 0.0 ? 1 : 0)
+          && next.draws == old.draws + (score == 0.5 ? 1 : 0)
+          && next.rating is int
+          && math.abs(next.rating - (old.rating + 32.0 * (score - expected))) <= 1.0;
+      }
+
+      allow update: if editsOwnProfile() || recordsGame();
     }
 
     // Username registry: the document id is the username, so uniqueness is enforced by Firestore itself.
@@ -158,6 +199,133 @@ service cloud.firestore {
         return room().status == 'waiting' && room().guestUid != null;
       }
 
+      function userDoc(uid) {
+        return /databases/$(database)/documents/users/$(uid);
+      }
+
+      // Mirrors TIME_CONTROLS in src/app/core/game/time-controls.ts
+      function validTimeControl(control) {
+        return control in [
+          { 'initial': 60, 'increment': 0 },
+          { 'initial': 180, 'increment': 2 },
+          { 'initial': 300, 'increment': 3 },
+          { 'initial': 600, 'increment': 0 },
+          { 'initial': 900, 'increment': 10 },
+          { 'initial': 1800, 'increment': 0 }
+        ];
+      }
+
+      // A rematch follows a finished game between the same two players and links it back in the same write.
+      function validRematch() {
+        let previous = get(/databases/$(database)/documents/rooms/$(incoming().rematchOf)).data;
+        return previous.status == 'finished'
+          && request.auth.uid in [previous.hostUid, previous.guestUid]
+          && incoming().invitedUid in [previous.hostUid, previous.guestUid]
+          && getAfter(/databases/$(database)/documents/rooms/$(incoming().rematchOf)).data.rematch == code;
+      }
+
+      // The last player to ready up deals the colors and starts both clocks.
+      function startsGame() {
+        let players = [room().hostUid, room().guestUid];
+        let clock = room().timeControl.initial * 1000;
+        return incoming().status == 'live'
+          && incoming().startedAt == request.time
+          && incoming().expiresAt is timestamp
+          && incoming().whiteUid in players
+          && incoming().blackUid in players
+          && incoming().whiteUid != incoming().blackUid
+          && (room().hostColor == 'random'
+            || (incoming().whiteUid == room().hostUid) == (room().hostColor == 'white'))
+          && incoming().whiteMs == clock
+          && incoming().blackMs == clock;
+      }
+
+      // ----- the game -----
+      function isLive() {
+        return room().status == 'live';
+      }
+
+      function isPlayer() {
+        return signedIn() && request.auth.uid in [room().whiteUid, room().blackUid];
+      }
+
+      function plies() {
+        return room().moves.size();
+      }
+
+      function uidToMove() {
+        return plies() % 2 == 0 ? room().whiteUid : room().blackUid;
+      }
+
+      function msToMove() {
+        return plies() % 2 == 0 ? room().whiteMs : room().blackMs;
+      }
+
+      function colorOf(uid) {
+        return uid == room().whiteUid ? 'white' : 'black';
+      }
+
+      function opponentColorOf(uid) {
+        return uid == room().whiteUid ? 'black' : 'white';
+      }
+
+      function moveKeys() {
+        return ['moves', 'fen', 'lastMoveAt', 'prevMoveAt', 'whiteMs', 'blackMs', 'drawOffer'];
+      }
+
+      function finishKeys() {
+        return ['status', 'result', 'reason', 'endedAt', 'endedBy', 'whiteRatingDiff', 'blackRatingDiff'];
+      }
+
+      // Appends one move in turn, within the mover's time. Each side's first move is free.
+      // Clocks use server timestamps only: the mover settles the opponent's last think time,
+      // which the two stored timestamps pin down exactly. Whether the move is legal chess is
+      // checked by both players' apps, because rules can't generate moves.
+      function validMove() {
+        let n = plies();
+        let next = incoming().moves;
+        let change = n >= 3
+          ? room().timeControl.increment * 1000 - (room().lastMoveAt.toMillis() - room().prevMoveAt.toMillis())
+          : 0;
+        return isLive()
+          && request.auth.uid == uidToMove()
+          && next is list
+          && next.size() == n + 1
+          && (n == 0 || next[0:n] == room().moves)
+          && next[n] is string
+          && next[n].matches('^[a-h][1-8][a-h][1-8][qrbn]?$')
+          && incoming().fen is string
+          && incoming().fen.size() <= 100
+          && incoming().lastMoveAt == request.time
+          && incoming().prevMoveAt == room().lastMoveAt
+          && (n < 2 || request.time.toMillis() - room().lastMoveAt.toMillis() <= msToMove())
+          && (n % 2 == 0
+            ? incoming().whiteMs == room().whiteMs && incoming().blackMs == room().blackMs + change
+            : incoming().blackMs == room().blackMs && incoming().whiteMs == room().whiteMs + change)
+          && incoming().drawOffer == (room().drawOffer == request.auth.uid ? request.auth.uid : null);
+      }
+
+      // Finishes the game. A rated result must record both players' stats in the same write.
+      function endsWith(result, reasons) {
+        return incoming().status == 'finished'
+          && incoming().result == result
+          && incoming().reason in reasons
+          && incoming().endedAt == request.time
+          && incoming().endedBy == request.auth.uid
+          && recordsStats();
+      }
+
+      function recordsStats() {
+        let white = userDoc(room().whiteUid);
+        let black = userDoc(room().blackUid);
+        return getAfter(white).data.get('lastGame', null) == code
+          && getAfter(black).data.get('lastGame', null) == code
+          && getAfter(white).data.stats != get(white).data.stats
+          && getAfter(black).data.stats != get(black).data.stats
+          && incoming().whiteRatingDiff == getAfter(white).data.stats.rating - get(white).data.stats.rating
+          && incoming().blackRatingDiff == getAfter(black).data.stats.rating - get(black).data.stats.rating;
+      }
+
       // Anyone with a code can look a room up. Listing is limited to live matches (public arena)
       // and rooms you're part of, so open room codes can't be scraped.
       allow get: if true;
@@ -172,7 +340,10 @@ service cloud.firestore {
         && code.matches('^[A-HJ-NP-Z2-9]{6}$')
         && incoming().keys().hasOnly([
           'code', 'type', 'status', 'hostUid', 'host', 'guestUid', 'guest', 'invitedUid', 'invited',
-          'friendshipId', 'hostReady', 'guestReady', 'createdAt', 'startedAt', 'endedAt', 'endedBy', 'expiresAt'
+          'friendshipId', 'hostReady', 'guestReady', 'createdAt', 'startedAt', 'endedAt', 'endedBy', 'expiresAt',
+          'timeControl', 'hostColor', 'whiteUid', 'blackUid', 'moves', 'fen', 'whiteMs', 'blackMs',
+          'lastMoveAt', 'prevMoveAt', 'drawOffer', 'result', 'reason', 'whiteRatingDiff', 'blackRatingDiff',
+          'rematchOf', 'rematch'
         ])
         && incoming().code == code
         && incoming().status == 'waiting'
@@ -180,29 +351,58 @@ service cloud.firestore {
         && validPlayer(incoming().host, request.auth.uid)
         && incoming().guestUid == null
         && incoming().guest == null
-        && incoming().hostReady == false
+        // A rematch host is ready from the start; the other player readies up by accepting.
+        && incoming().hostReady == (incoming().type == 'rematch')
         && incoming().guestReady == false
         && incoming().createdAt == request.time
         && incoming().startedAt == null
         && incoming().endedAt == null
         && incoming().endedBy == null
         && incoming().expiresAt is timestamp
+        && validTimeControl(incoming().timeControl)
+        && incoming().hostColor in ['white', 'black', 'random']
+        && incoming().whiteUid == null
+        && incoming().blackUid == null
+        && incoming().moves == []
+        && incoming().fen == 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+        && incoming().whiteMs == null
+        && incoming().blackMs == null
+        && incoming().lastMoveAt == null
+        && incoming().prevMoveAt == null
+        && incoming().drawOffer == null
+        && incoming().result == null
+        && incoming().reason == null
+        && incoming().whiteRatingDiff == null
+        && incoming().blackRatingDiff == null
+        && incoming().rematch == null
         && (
           (incoming().type == 'code'
             && incoming().invitedUid == null
             && incoming().invited == null
-            && incoming().friendshipId == null)
+            && incoming().friendshipId == null
+            && incoming().rematchOf == null)
           || (incoming().type == 'challenge'
             && incoming().invitedUid is string
             && incoming().invitedUid != request.auth.uid
             && validPlayer(incoming().invited, incoming().invitedUid)
             && incoming().friendshipId == pairId(request.auth.uid, incoming().invitedUid)
-            && exists(/databases/$(database)/documents/friendships/$(incoming().friendshipId)))
+            && exists(/databases/$(database)/documents/friendships/$(incoming().friendshipId))
+            && incoming().rematchOf == null)
+          || (incoming().type == 'rematch'
+            && incoming().invitedUid is string
+            && incoming().invitedUid != request.auth.uid
+            && validPlayer(incoming().invited, incoming().invitedUid)
+            && incoming().friendshipId == null
+            && incoming().rematchOf is string
+            && validRematch())
         );
 
       allow update: if signedIn() && (
+        // Make a move. Checked first because it's by far the most common write.
+        (validMove() && changed().hasOnly(moveKeys()))
+
         // Take the empty seat.
-        (room().status == 'waiting'
+        || (room().status == 'waiting'
           && room().guestUid == null
           && room().hostUid != request.auth.uid
           && (room().type == 'code' || room().invitedUid == request.auth.uid)
@@ -219,6 +419,15 @@ service cloud.firestore {
           && incoming().guestReady == false
           && incoming().hostReady == false)
 
+        // Host picks the clock and their color. Both players ready up again.
+        || (room().status == 'waiting'
+          && isHost()
+          && changed().hasOnly(['timeControl', 'hostColor', 'hostReady', 'guestReady'])
+          && validTimeControl(incoming().timeControl)
+          && incoming().hostColor in ['white', 'black', 'random']
+          && incoming().hostReady == false
+          && incoming().guestReady == false)
+
         // Toggle your own ready flag.
         || (waitingWithGuest() && isHost()
           && changed().hasOnly(['hostReady'])
@@ -230,18 +439,14 @@ service cloud.firestore {
         // Last player to ready up starts the match.
         || (waitingWithGuest() && isHost()
           && room().guestReady == true
-          && changed().hasOnly(['hostReady', 'status', 'startedAt', 'expiresAt'])
+          && changed().hasOnly(['hostReady', 'status', 'startedAt', 'expiresAt', 'whiteUid', 'blackUid', 'whiteMs', 'blackMs'])
           && incoming().hostReady == true
-          && incoming().status == 'live'
-          && incoming().startedAt == request.time
-          && incoming().expiresAt is timestamp)
+          && startsGame())
         || (waitingWithGuest() && isGuest()
           && room().hostReady == true
-          && changed().hasOnly(['guestReady', 'status', 'startedAt', 'expiresAt'])
+          && changed().hasOnly(['guestReady', 'status', 'startedAt', 'expiresAt', 'whiteUid', 'blackUid', 'whiteMs', 'blackMs'])
           && incoming().guestReady == true
-          && incoming().status == 'live'
-          && incoming().startedAt == request.time
-          && incoming().expiresAt is timestamp)
+          && startsGame())
 
         // Host closes a waiting room.
         || (room().status == 'waiting'
@@ -251,9 +456,9 @@ service cloud.firestore {
           && incoming().endedAt == request.time
           && incoming().endedBy == request.auth.uid)
 
-        // Invited friend declines a challenge.
+        // Invited player declines a challenge or rematch.
         || (room().status == 'waiting'
-          && room().type == 'challenge'
+          && room().type in ['challenge', 'rematch']
           && room().invitedUid == request.auth.uid
           && room().guestUid == null
           && changed().hasOnly(['status', 'endedAt', 'endedBy'])
@@ -261,13 +466,56 @@ service cloud.firestore {
           && incoming().endedAt == request.time
           && incoming().endedBy == request.auth.uid)
 
-        // Either player ends a live match.
-        || (room().status == 'live'
-          && (isHost() || isGuest())
-          && changed().hasOnly(['status', 'endedAt', 'endedBy'])
+        // A move that ends the game on the board.
+        || (validMove()
+          && changed().hasOnly(moveKeys().concat(finishKeys()))
+          && (endsWith(colorOf(request.auth.uid), ['checkmate'])
+            || endsWith('draw', ['stalemate', 'insufficient', 'threefold', 'fifty'])))
+
+        // Either player aborts before both have moved. Nothing is rated.
+        || (isLive() && isPlayer() && plies() < 2
+          && changed().hasOnly(['status', 'result', 'reason', 'endedAt', 'endedBy'])
           && incoming().status == 'finished'
+          && incoming().result == 'aborted'
+          && incoming().reason == 'aborted'
           && incoming().endedAt == request.time
           && incoming().endedBy == request.auth.uid)
+
+        // Resign.
+        || (isLive() && isPlayer() && plies() >= 2
+          && changed().hasOnly(finishKeys())
+          && endsWith(opponentColorOf(request.auth.uid), ['resign']))
+
+        // Offer a draw, or withdraw or decline the standing offer.
+        || (isLive() && isPlayer() && plies() >= 2
+          && changed().hasOnly(['drawOffer'])
+          && (room().drawOffer == null
+            ? incoming().drawOffer == request.auth.uid
+            : incoming().drawOffer == null))
+
+        // Accept the opponent's draw offer.
+        || (isLive() && isPlayer() && plies() >= 2
+          && room().drawOffer != null
+          && room().drawOffer != request.auth.uid
+          && changed().hasOnly(finishKeys())
+          && endsWith('draw', ['agreement']))
+
+        // Either player calls the flag once the side to move is out of time on the server clock.
+        // Only the waiting side may call it a draw instead (the flagged side left them a bare
+        // king), since a draw is never in their interest unless it's true.
+        || (isLive() && isPlayer() && plies() >= 2
+          && request.time.toMillis() - room().lastMoveAt.toMillis() > msToMove()
+          && changed().hasOnly(finishKeys())
+          && (endsWith(plies() % 2 == 0 ? 'black' : 'white', ['timeout'])
+            || (request.auth.uid != uidToMove() && endsWith('draw', ['timeout']))))
+
+        // Link the rematch room created in the same write.
+        || (room().status == 'finished'
+          && request.auth.uid in [room().hostUid, room().guestUid]
+          && room().get('rematch', null) == null
+          && changed().hasOnly(['rematch'])
+          && incoming().rematch is string
+          && existsAfter(/databases/$(database)/documents/rooms/$(incoming().rematch)))
       );
 
       allow delete: if false;

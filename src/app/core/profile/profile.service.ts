@@ -1,4 +1,4 @@
-import { Service, effect, inject, signal } from '@angular/core';
+import { Service, Signal, effect, inject, signal } from '@angular/core';
 import { User } from 'firebase/auth';
 import {
   DocumentSnapshot,
@@ -62,6 +62,25 @@ export class ProfileService {
       this.indexEmail(user);
       onCleanup(unsubscribe);
     });
+  }
+
+  /** Follows any player's public profile. Must be called in an injection context. */
+  watch(uid: () => string | null): Signal<UserProfile | null> {
+    const profile = signal<UserProfile | null>(null);
+    effect((onCleanup) => {
+      const value = uid();
+      profile.set(null);
+      if (!value) {
+        return;
+      }
+      const unsubscribe = onSnapshot(
+        doc(this.db, 'users', value),
+        (snap) => profile.set(snap.exists() ? toProfile(snap) : null),
+        (error) => console.error('Player listener failed', error),
+      );
+      onCleanup(unsubscribe);
+    });
+    return profile.asReadonly();
   }
 
   private requireUid(): string {

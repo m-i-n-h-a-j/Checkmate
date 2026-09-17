@@ -17,6 +17,8 @@ export interface UserProfile {
   stats: PlayerStats;
   createdAt: Timestamp | null;
   lastActive: Timestamp | null;
+  /** Code of the last rated game that changed these stats. */
+  lastGame?: string;
 }
 
 /** Denormalized copy of a player embedded in requests and rooms. */
@@ -48,10 +50,37 @@ export interface Friend {
   profile: UserProfile | null;
 }
 
-export type RoomType = 'code' | 'challenge';
+export type Side = 'white' | 'black';
+export type HostColor = Side | 'random';
+
+/** Clock settings in seconds, e.g. 3 minutes plus 2 seconds per move. */
+export interface TimeControl {
+  initial: number;
+  increment: number;
+}
+
+export type GameResult = Side | 'draw' | 'aborted';
+export type GameEndReason =
+  | 'checkmate'
+  | 'resign'
+  | 'timeout'
+  | 'stalemate'
+  | 'insufficient'
+  | 'threefold'
+  | 'fifty'
+  | 'agreement'
+  | 'aborted';
+
+export type RoomType = 'code' | 'challenge' | 'rematch';
 export type RoomStatus = 'waiting' | 'live' | 'finished' | 'cancelled' | 'declined';
 
-/** A game room at rooms/{code}. Every live room is public to spectators. */
+/**
+ * A game room at rooms/{code}. Every live room is public to spectators.
+ *
+ * The chess game lives in the same document so a move, the clocks and the result change together.
+ * Clocks only ever use server timestamps: `whiteMs`/`blackMs` hold each side's time left as of that
+ * side's previous move, and the opponent settles the latest think time on their next move.
+ */
 export interface Room {
   code: string;
   type: RoomType;
@@ -70,6 +99,28 @@ export interface Room {
   endedAt: Timestamp | null;
   endedBy: string | null;
   expiresAt: Timestamp;
+
+  timeControl: TimeControl;
+  hostColor: HostColor;
+  whiteUid: string | null;
+  blackUid: string | null;
+  /** Moves in UCI notation, e.g. "e2e4" or "e7e8q". */
+  moves: string[];
+  fen: string;
+  whiteMs: number | null;
+  blackMs: number | null;
+  lastMoveAt: Timestamp | null;
+  prevMoveAt: Timestamp | null;
+  /** uid of the player offering a draw. */
+  drawOffer: string | null;
+  result: GameResult | null;
+  reason: GameEndReason | null;
+  whiteRatingDiff: number | null;
+  blackRatingDiff: number | null;
+  /** The finished room this rematch follows. */
+  rematchOf: string | null;
+  /** Code of the rematch room created after this game. */
+  rematch: string | null;
 }
 
 export type RoomState =

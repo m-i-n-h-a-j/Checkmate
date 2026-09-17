@@ -7,6 +7,7 @@ import { FriendsService } from './core/friends/friends.service';
 import { PresenceService } from './core/presence/presence.service';
 import { ProfileService } from './core/profile/profile.service';
 import { AppUpdateService } from './core/pwa/app-update.service';
+import { EffectsService } from './core/settings/effects.service';
 import { RoomsService } from './core/rooms/rooms.service';
 import { ArcadeBackground } from './layout/arcade-background';
 import { Avatar } from './shared/ui/avatar';
@@ -29,6 +30,7 @@ export class App {
   protected readonly friends = inject(FriendsService);
   protected readonly rooms = inject(RoomsService);
   protected readonly presence = inject(PresenceService);
+  protected readonly effects = inject(EffectsService);
   private readonly updates = inject(AppUpdateService);
   private readonly toasts = inject(ToastService);
   private readonly router = inject(Router);
@@ -152,17 +154,22 @@ export class App {
         }
         for (const room of challenges) {
           const sentAt = room.createdAt?.toMillis() ?? 0;
+          const rematch = room.type === 'rematch';
           if (
             open.has(room.code) ||
             Date.now() - sentAt > FRESH_INVITE_MS ||
-            this.currentPath() === '/play'
+            this.currentPath() === '/play' ||
+            // The finished game's result screen already offers the rematch.
+            (rematch && this.currentPath() === `/room/${room.rematchOf}`)
           ) {
             continue;
           }
           const toastId = this.toasts.show(
             {
               tone: 'invite',
-              title: `${room.host.displayName} challenged you`,
+              title: rematch
+                ? `${room.host.displayName} wants a rematch`
+                : `${room.host.displayName} challenged you`,
               message: 'Accept to take the other seat.',
               actions: [
                 {
@@ -170,7 +177,10 @@ export class App {
                   run: () =>
                     this.rooms
                       .join(room.code)
-                      .then((code) => this.router.navigate(['/room', code]))
+                      .then(async (code) => {
+                        await this.router.navigate(['/room', code]);
+                        if (rematch) await this.rooms.setReady(code, true);
+                      })
                       .catch((error: unknown) => this.toasts.error(error)),
                 },
                 {

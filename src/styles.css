@@ -1,4 +1,8 @@
 @import 'tailwindcss';
+@import 'chessground/assets/chessground.base.css';
+@import './styles/chess-pieces.css';
+@import './styles/chessboard.css';
+@import './styles/board-fx.css';
 
 /* ------------------------------------------------------------------
    Checkmate Arcade design tokens
@@ -107,6 +111,14 @@
     color-scheme: dark;
     background: var(--color-void);
     scroll-behavior: smooth;
+    /* Keep focused fields clear of the sticky header and, on phones, the bottom tab bar. */
+    scroll-padding-top: calc(5rem + env(safe-area-inset-top));
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 48rem) {
+    html {
+      scroll-padding-bottom: 1rem;
+    }
   }
 
   body {
@@ -660,6 +672,23 @@
   .fade-in {
     animation: pop-in 320ms ease-out both;
   }
+}
+
+/* Light effects mode (EffectsService): no looping sign lights and no background blurs. */
+.fx-lite .marquee::before,
+.fx-lite .marquee::after,
+.fx-lite .marquee-letter > .is-faulty,
+.fx-lite .live-dot::after {
+  animation: none;
+}
+.fx-lite .marquee::after {
+  opacity: 0;
+}
+.fx-lite .panel,
+.fx-lite header,
+.fx-lite nav,
+.fx-lite .backdrop-blur-sm {
+  backdrop-filter: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
