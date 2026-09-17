@@ -5,7 +5,7 @@ import { Component } from '@angular/core';
   selector: 'app-board-placeholder',
   template: `
     <div
-      class="board panel panel-gold relative mx-auto aspect-square w-full max-w-[520px] overflow-hidden p-3"
+      class="board panel panel-gold relative mx-auto aspect-square w-full max-w-130 overflow-hidden p-3"
     >
       <div
         class="grid size-full grid-cols-8 grid-rows-8 overflow-hidden rounded-lg border border-gold/30"
@@ -27,26 +27,29 @@ import { Component } from '@angular/core';
     </div>
   `,
   styles: `
+    /*
+     * A scan line and its trail, moved by transform so the board never repaints. It crosses in the
+     * first two thirds of the loop and waits below the clipped edge, so the restart is never seen.
+     */
     .board-sweep {
       position: absolute;
-      inset: 0;
+      inset: 0 0 auto;
+      height: 124.8%;
       background: linear-gradient(
         180deg,
-        transparent 0%,
-        rgb(34 240 255 / 0.14) 48%,
-        rgb(34 240 255 / 0.3) 50%,
-        transparent 52%
+        transparent,
+        rgb(34 240 255 / 0.14) 92.3%,
+        rgb(34 240 255 / 0.3) 96.2%,
+        transparent
       );
-      background-size: 100% 240%;
+      transform: translateY(-100%);
       animation: sweep 3.2s linear infinite;
       pointer-events: none;
     }
     @keyframes sweep {
-      from {
-        background-position: 0 120%;
-      }
+      67%,
       to {
-        background-position: 0 -120%;
+        transform: translateY(80.2%);
       }
     }
   `,

@@ -16,12 +16,8 @@
   <div class="marquee">
     <h1 class="marquee-title" aria-label="Checkmate">
       @for (letter of letters; track $index) {
-        <span
-          class="marquee-letter"
-          [class.is-faulty]="$index === faultyLetter"
-          [style.--i]="$index"
-          aria-hidden="true"
-          >{{ letter }}</span
+        <span class="marquee-letter" [style.--i]="$index" aria-hidden="true"
+          ><span [class.is-faulty]="$index === faultyLetter">{{ letter }}</span></span
         >
       }
     </h1>

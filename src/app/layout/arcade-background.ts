@@ -108,45 +108,60 @@ import { Component, input } from '@angular/core';
       overflow: hidden;
       perspective: 320px;
       perspective-origin: 50% 0;
+      /*
+       * Fades the floor out 1300px deep (depth d lands at 320 / (320 + d) of this box's height).
+       * It sits here, not on the floor, so the fade holds still while the checkers slide under it.
+       */
+      -webkit-mask-image: linear-gradient(
+        180deg,
+        transparent 19.75%,
+        rgb(0 0 0 / 0.2) 22.5%,
+        rgb(0 0 0 / 0.4) 26.1%,
+        rgb(0 0 0 / 0.6) 31.2%,
+        rgb(0 0 0 / 0.8) 38.6%,
+        #000 50.6%
+      );
+      mask-image: linear-gradient(
+        180deg,
+        transparent 19.75%,
+        rgb(0 0 0 / 0.2) 22.5%,
+        rgb(0 0 0 / 0.4) 26.1%,
+        rgb(0 0 0 / 0.6) 31.2%,
+        rgb(0 0 0 / 0.8) 38.6%,
+        #000 50.6%
+      );
     }
+    /*
+     * Just the visible plane: 1300px deep plus one slide, wide enough to reach the screen edges
+     * there. It rolls by transform so the compositor moves checkers drawn once; animating
+     * background-position would repaint this whole surface every frame. No grid lines: thin lines
+     * on a plane this tilted shrink below a pixel in the distance and flicker as they slide.
+     */
     .floor {
       position: absolute;
-      left: -350%;
-      right: -350%;
+      left: -200%;
+      right: -200%;
       bottom: 0;
-      height: 2600px;
+      height: 1560px;
       transform-origin: 50% 100%;
       transform: rotateX(90deg);
-      background-image:
-        linear-gradient(rgb(34 240 255 / 0.75) 3px, transparent 3px),
-        linear-gradient(90deg, rgb(34 240 255 / 0.75) 3px, transparent 3px),
-        conic-gradient(
-          rgb(255 46 136 / 0.22) 25%,
-          transparent 0 50%,
-          rgb(255 46 136 / 0.22) 0 75%,
-          transparent 0
-        );
-      background-size:
-        120px 120px,
-        120px 120px,
-        240px 240px;
+      background-image: conic-gradient(
+        rgb(255 46 136 / 0.22) 25%,
+        transparent 0 50%,
+        rgb(255 46 136 / 0.22) 0 75%,
+        transparent 0
+      );
+      background-size: 240px 240px;
       background-position: center bottom;
-      -webkit-mask-image: linear-gradient(180deg, transparent 50%, #000 88%);
-      mask-image: linear-gradient(180deg, transparent 50%, #000 88%);
       animation: floor-roll 4s linear infinite;
     }
+    /* One checker period toward the player, so the loop is seamless. */
     @keyframes floor-roll {
       from {
-        background-position:
-          50% 0,
-          50% 0,
-          50% 0;
+        transform: rotateX(90deg) translateY(0);
       }
       to {
-        background-position:
-          50% 240px,
-          50% 240px,
-          50% 240px;
+        transform: rotateX(90deg) translateY(240px);
       }
     }
   `,
