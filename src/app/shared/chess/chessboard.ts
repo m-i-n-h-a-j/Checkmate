@@ -107,6 +107,7 @@ export class Chessboard {
   private readonly api = signal<Api | null>(null);
   private appliedFen: string | null = null;
   private appliedLastMove: string | null = null;
+  private acceptingInput = false;
 
   private readonly reducedMotion =
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -148,9 +149,17 @@ export class Chessboard {
     afterNextRender(() => {
       const frame = this.frame().nativeElement;
       const board = this.board().nativeElement;
+      const config = this.config();
 
+      // Chessground wires its pointer handlers once, while it builds itself: `bindBoard` returns
+      // early on `viewOnly`, `set()` never rebinds, and the drag ghost only exists when dragging
+      // was on at that moment. A board born unplayable — a finished game reopened, then played
+      // again — would stay deaf to clicks for good, so every full board is born interactive and
+      // the real state lands on the line after.
       const api = Chessground(board, {
-        ...this.config(),
+        ...config,
+        viewOnly: this.mini(),
+        draggable: { enabled: !this.mini(), showGhost: true },
         fen: this.fen(),
         lastMove: (this.lastMove() ?? undefined) as Key[] | undefined,
         disableContextMenu: true,
@@ -158,12 +167,15 @@ export class Chessboard {
         animation: { enabled: !this.reducedMotion, duration: this.mini() ? 180 : 200 },
         highlight: { lastMove: true, check: true },
         movable: {
-          ...this.config().movable,
+          ...config.movable,
           events: { after: (orig, dest, meta) => this.afterMove(orig, dest, meta) },
         },
       });
+      api.set({ viewOnly: config.viewOnly, draggable: config.draggable });
       this.appliedFen = this.fen();
       this.appliedLastMove = this.lastMove()?.join('') ?? null;
+      this.acceptingInput = !config.viewOnly;
+      board.classList.toggle('manipulable', this.acceptingInput);
       this.api.set(api);
 
       // Chessground measures the board with getBoundingClientRect, which includes transforms. If an
@@ -206,11 +218,25 @@ export class Chessboard {
           this.appliedLastMove = lastMoveKey;
         }
         api.set(update);
+        this.acceptInput(api, !config.viewOnly);
         if (moved && config.movable?.color === config.turnColor) {
           api.playPremove();
         }
       });
     });
+  }
+
+  /**
+   * Follows the board between playable and watched. A game can end with a piece in the air, and
+   * Chessground gates its own mouseup on `viewOnly`, so that drag would never finish: the piece
+   * would hang over the board until the next click dropped it back. Ending it here also clears a
+   * leftover selection or premove, and keeps the cursor honest about what the board still takes.
+   */
+  private acceptInput(api: Api, accepting: boolean): void {
+    if (accepting === this.acceptingInput) return;
+    this.acceptingInput = accepting;
+    this.board().nativeElement.classList.toggle('manipulable', accepting);
+    if (!accepting) api.cancelMove();
   }
 
   /** Puts the pieces back where the inputs say, e.g. after a move was refused. */
