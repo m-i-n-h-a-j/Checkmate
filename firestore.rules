@@ -269,6 +269,20 @@ service cloud.firestore {
         return uid == room().whiteUid ? 'black' : 'white';
       }
 
+      // Mirrors REACTIONS in src/app/core/game/reactions.ts.
+      function validReaction(reaction) {
+        return reaction.keys().hasOnly(['uid', 'emoji', 'at', 'n'])
+          && reaction.uid == request.auth.uid
+          && reaction.emoji in ['👏', '🔥', '😂', '😮', '😅', '🧠', '😭', '🤝']
+          && reaction.at == request.time
+          && reaction.n is int
+          && (room().get('reaction', null) == null
+            ? reaction.n == 1
+            // One slot for both players: the counter has to move on, and reactions stay 1.5s apart.
+            : reaction.n == room().reaction.n + 1
+              && request.time.toMillis() - room().reaction.at.toMillis() >= 1500);
+      }
+
       function moveKeys() {
         return ['moves', 'fen', 'lastMoveAt', 'prevMoveAt', 'whiteMs', 'blackMs', 'drawOffer'];
       }
@@ -343,7 +357,7 @@ service cloud.firestore {
           'friendshipId', 'hostReady', 'guestReady', 'createdAt', 'startedAt', 'endedAt', 'endedBy', 'expiresAt',
           'timeControl', 'hostColor', 'whiteUid', 'blackUid', 'moves', 'fen', 'whiteMs', 'blackMs',
           'lastMoveAt', 'prevMoveAt', 'drawOffer', 'result', 'reason', 'whiteRatingDiff', 'blackRatingDiff',
-          'rematchOf', 'rematch'
+          'rematchOf', 'rematch', 'reaction'
         ])
         && incoming().code == code
         && incoming().status == 'waiting'
@@ -375,6 +389,7 @@ service cloud.firestore {
         && incoming().whiteRatingDiff == null
         && incoming().blackRatingDiff == null
         && incoming().rematch == null
+        && incoming().reaction == null
         && (
           (incoming().type == 'code'
             && incoming().invitedUid == null
@@ -492,6 +507,11 @@ service cloud.firestore {
           && (room().drawOffer == null
             ? incoming().drawOffer == request.auth.uid
             : incoming().drawOffer == null))
+
+        // Send a reaction to the opponent. Spectators watching the room see it too.
+        || (isLive() && isPlayer()
+          && changed().hasOnly(['reaction'])
+          && validReaction(incoming().reaction))
 
         // Accept the opponent's draw offer.
         || (isLive() && isPlayer() && plies() >= 2

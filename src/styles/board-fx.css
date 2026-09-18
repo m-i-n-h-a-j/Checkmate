@@ -208,3 +208,35 @@
     0 4px 0 #7d4d0b,
     0 0 24px rgb(255 201 74 / 0.8);
 }
+
+/* Reactions: a fixed layer over the whole page, so a pop can follow a player strip anywhere. */
+.reaction-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  contain: strict;
+}
+
+.reaction-pop {
+  position: absolute;
+  /* Big enough to read at a glance on a phone, never overbearing on a desktop. */
+  font-size: clamp(2.75rem, 11vw, 3.75rem);
+  line-height: 1;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 0.25rem 0.5rem rgb(0 0 0 / 0.55));
+}
+
+.reaction-glow {
+  position: absolute;
+  width: clamp(5rem, 20vw, 7rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgb(255 201 74 / 0.55),
+    rgb(255 46 136 / 0.25) 55%,
+    transparent 70%
+  );
+  will-change: transform, opacity;
+}

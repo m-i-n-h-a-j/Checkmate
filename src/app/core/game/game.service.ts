@@ -8,6 +8,7 @@ import { toRoom } from '../rooms/rooms.service';
 import type { PlayedMove } from './chess-game';
 import { settledClocks } from './clock';
 import { hasBareKing, opposite, sideToMove } from './notation';
+import type { ReactionEmoji } from './reactions';
 import { Score, statsAfter } from './rating';
 import { ServerClock } from './server-clock.service';
 
@@ -54,6 +55,22 @@ export class GameService {
     return this.finish(room.code, null, (current) =>
       current.moves.length < 2 ? { result: 'aborted', reason: 'aborted' } : null,
     );
+  }
+
+  /**
+   * Sends a reaction. Both players share the one slot on the room, which is what keeps the counter
+   * honest and the reactions spaced out; a write that loses the race is dropped rather than retried,
+   * because by then the other player's reaction is already on screen.
+   */
+  async react(room: Room, emoji: ReactionEmoji): Promise<void> {
+    await updateDoc(doc(this.db, 'rooms', room.code), {
+      reaction: {
+        uid: this.auth.uid(),
+        emoji,
+        at: serverTimestamp(),
+        n: (room.reaction?.n ?? 0) + 1,
+      },
+    });
   }
 
   async offerDraw(room: Room): Promise<void> {

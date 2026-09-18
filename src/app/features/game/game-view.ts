@@ -2,6 +2,7 @@ import {
   Component,
   DOCUMENT,
   DestroyRef,
+  ElementRef,
   computed,
   effect,
   inject,
@@ -9,6 +10,7 @@ import {
   signal,
   untracked,
   viewChild,
+  viewChildren,
 } from '@angular/core';
 import { MusicService } from '../../core/audio/music.service';
 import { AuthService } from '../../core/auth/auth.service';
@@ -16,10 +18,11 @@ import { ChessReplay, PlayedMove } from '../../core/game/chess-game';
 import { FREE_PLIES, flaggedSide, readClocks } from '../../core/game/clock';
 import { GameService } from '../../core/game/game.service';
 import { materialLeft, opposite, parseUci } from '../../core/game/notation';
+import { ReactionEmoji, reactionLabel } from '../../core/game/reactions';
 import { ServerClock } from '../../core/game/server-clock.service';
 import { SoundService } from '../../core/game/sound.service';
 import { timeControlOption } from '../../core/game/time-controls';
-import { PlayerSnapshot, Room, Side } from '../../core/models';
+import { PlayerSnapshot, Reaction, Room, Side } from '../../core/models';
 import { ProfileService } from '../../core/profile/profile.service';
 import { EffectsService } from '../../core/settings/effects.service';
 import { BoardMove, Chessboard } from '../../shared/chess/chessboard';
@@ -32,6 +35,8 @@ import { GameOver } from './game-over';
 import { MoveInput } from './move-input';
 import { MoveList } from './move-list';
 import { PlayerStrip } from './player-strip';
+import { ReactionFx } from './reaction-fx';
+import { ReactionPicker } from './reaction-picker';
 
 const MAX_CLAIM_BACKOFF_MS = 30_000;
 const FLAG_GRACE_MS = 400;
@@ -39,7 +44,18 @@ const FLAG_GRACE_MS = 400;
 /** A live or finished game: board, clocks, moves and controls, for players and spectators alike. */
 @Component({
   selector: 'app-game-view',
-  imports: [Chessboard, BoardFx, PlayerStrip, MoveList, MoveInput, GameControls, GameOver, Icon],
+  imports: [
+    Chessboard,
+    BoardFx,
+    PlayerStrip,
+    MoveList,
+    MoveInput,
+    GameControls,
+    GameOver,
+    ReactionFx,
+    ReactionPicker,
+    Icon,
+  ],
   templateUrl: './game-view.html',
   host: { class: 'block' },
 })
@@ -58,6 +74,8 @@ export class GameView {
   readonly mode = input<'play' | 'watch'>('play');
 
   private readonly board = viewChild(Chessboard);
+  private readonly reactionFx = viewChild(ReactionFx);
+  private readonly stripElements = viewChildren(PlayerStrip, { read: ElementRef });
   private readonly fx = viewChild(BoardFx);
   private readonly moveInput = viewChild(MoveInput);
 
@@ -132,6 +150,10 @@ export class GameView {
     resultSelector: 'app-game-over h2',
   });
   protected readonly copied = signal(false);
+  /** What a screen reader hears when a reaction lands. */
+  protected readonly reactionNote = signal('');
+  /** The counter of the last reaction shown, so a reaction plays once and old ones never replay. */
+  private shownReaction = -1;
 
   private claimDelay = 0;
   private claiming = false;
@@ -183,6 +205,21 @@ export class GameView {
       );
     });
 
+    // A reaction pops over whoever sent it, for both players and anyone watching. Whatever the room
+    // already carried when this view opened has been and gone, so the first reading only sets the mark.
+    let opening = true;
+    effect(() => {
+      const reaction = this.room().reaction;
+      untracked(() => {
+        if (opening) {
+          opening = false;
+          this.shownReaction = reaction?.n ?? 0;
+          return;
+        }
+        this.showReaction(reaction);
+      });
+    });
+
     // Music follows the shape of the game: the endgame loop, then the clock.
     effect(() => {
       const room = this.room();
@@ -219,6 +256,23 @@ export class GameView {
     }
     this.moveInput()?.accept();
     this.play(played);
+  }
+
+  protected react(emoji: ReactionEmoji): void {
+    // A reaction that loses the race for the shared slot is dropped: by then the other player's
+    // reaction is already on screen, and a second one on top of it would just be noise.
+    this.games.react(this.room(), emoji).catch(() => undefined);
+  }
+
+  private showReaction(reaction: Reaction | null): void {
+    if (!reaction || reaction.n <= this.shownReaction) return;
+    this.shownReaction = reaction.n;
+    const side: Side = reaction.uid === this.room().whiteUid ? 'white' : 'black';
+    // strips() is [top, bottom], and the bottom one is whoever the board faces.
+    const element = this.stripElements()[side === this.orientation() ? 1 : 0];
+    this.reactionFx()?.show(reaction.emoji, element?.nativeElement ?? null);
+    if (reaction.uid !== this.auth.uid()) this.sounds.play('pop');
+    this.reactionNote.set(`${this.nameOf(side)} reacted: ${reactionLabel(reaction.emoji)}`);
   }
 
   protected flip(): void {

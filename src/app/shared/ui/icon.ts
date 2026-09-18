@@ -16,6 +16,7 @@ export type IconName =
   | 'sparkles'
   | 'sparkles-off'
   | 'bot'
+  | 'smile'
   | 'music'
   | 'music-off'
   | 'pause'
@@ -84,6 +85,10 @@ export type IconName =
           <path
             d="m10 4 1.8 5.2L17 11l-5.2 1.8L10 18l-1.8-5.2L3 11l5.2-1.8L10 4ZM19 2v4M17 4h4M19 17v4M17 19h4"
           />
+        }
+        @case ('smile') {
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 0 0 7 0" />
         }
         @case ('music') {
           <path d="M9 18V5l11-2v13" />

@@ -22,7 +22,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
-import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { REACTIONS } from '../src/app/core/game/reactions';
 
 let env: RulesTestEnvironment;
 
@@ -114,6 +115,7 @@ function room(code: string, host: string, extra: Record<string, unknown> = {}) {
     blackRatingDiff: null,
     rematchOf: null,
     rematch: null,
+    reaction: null,
     ...extra,
   };
 }
@@ -450,14 +452,18 @@ describe('rooms', () => {
     await assertSucceeds(updateDoc(doc(as('bob'), 'rooms', 'ABC234'), { guestReady: true }));
     await assertFails(updateDoc(doc(as('eve'), 'rooms', 'ABC234'), { hostReady: true, ...live }));
     await assertFails(
-      updateDoc(doc(as('alice'), 'rooms', 'ABC234'), { hostReady: true, ...live, whiteMs: 900_000 }),
+      updateDoc(doc(as('alice'), 'rooms', 'ABC234'), {
+        hostReady: true,
+        ...live,
+        whiteMs: 900_000,
+      }),
     );
     await assertSucceeds(
       updateDoc(doc(as('alice'), 'rooms', 'ABC234'), { hostReady: true, ...live }),
     );
   });
 
-  it("deals colors the way the host asked", async () => {
+  it('deals colors the way the host asked', async () => {
     await seedRoom(
       'ABC234',
       room('ABC234', 'alice', {
@@ -715,7 +721,10 @@ describe('games', () => {
     await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], lastMoveAt: ago(5_000) }));
     await assertFails(finish('bob', { result: 'black', reason: 'timeout' }, bobWins));
 
-    await seedRoom('GAME22', game({ moves: ['e2e4', 'e7e5'], whiteMs: 4_000, lastMoveAt: ago(5_000) }));
+    await seedRoom(
+      'GAME22',
+      game({ moves: ['e2e4', 'e7e5'], whiteMs: 4_000, lastMoveAt: ago(5_000) }),
+    );
     // The flagged player can't turn their loss into a draw.
     await assertFails(finish('alice', { result: 'draw', reason: 'timeout' }, drawn));
     await assertSucceeds(finish('alice', { result: 'black', reason: 'timeout' }, bobWins));
@@ -751,5 +760,132 @@ describe('games', () => {
     await assertSucceeds(
       updateDoc(doc(as('alice'), 'rooms', 'REMA22'), { guestUid: 'alice', guest: player('alice') }),
     );
+  });
+});
+
+describe('reactions', () => {
+  const ago = (ms: number) => Timestamp.fromMillis(Date.now() - ms);
+
+  beforeEach(async () => {
+    await seedUser('alice');
+    await seedUser('bob');
+    await seedUser('eve');
+  });
+
+  /** Alice plays White against Bob, two moves in. */
+  function live(extra: Record<string, unknown> = {}) {
+    return room('REACT2', 'alice', {
+      status: 'live',
+      guestUid: 'bob',
+      guest: player('bob'),
+      startedAt: Timestamp.now(),
+      whiteUid: 'alice',
+      blackUid: 'bob',
+      whiteMs: 600_000,
+      blackMs: 600_000,
+      moves: ['e2e4', 'e7e5'],
+      fen: START_FEN,
+      lastMoveAt: Timestamp.now(),
+      prevMoveAt: Timestamp.now(),
+      ...extra,
+    });
+  }
+
+  const react = (uid: string, fields: Record<string, unknown> = {}) =>
+    updateDoc(doc(as(uid), 'rooms', 'REACT2'), {
+      reaction: { uid, emoji: '👏', at: serverTimestamp(), n: 1, ...fields },
+    });
+
+  it('refuses a room that is created with a reaction already on it', async () => {
+    await assertFails(
+      setDoc(doc(as('alice'), 'rooms', 'REACT3'), {
+        ...room('REACT3', 'alice'),
+        createdAt: serverTimestamp(),
+        reaction: { uid: 'alice', emoji: '👏', at: serverTimestamp(), n: 1 },
+      }),
+    );
+  });
+
+  it('accepts exactly the emoji the app offers', () => {
+    // The app's list and the rules' list are written out separately; drift means rejected writes.
+    const allowed =
+      /reaction\.emoji in \[(.+)\]/.exec(readFileSync('firestore.rules', 'utf8'))?.[1] ?? '';
+    expect([...allowed.matchAll(/'([^']+)'/g)].map((m) => m[1])).toEqual(
+      REACTIONS.map((r) => r.emoji),
+    );
+  });
+
+  it('lets either player react during a live game', async () => {
+    await seedRoom('REACT2', live());
+    await assertSucceeds(react('alice'));
+  });
+
+  it('rejects a reaction from a spectator', async () => {
+    await seedRoom('REACT2', live());
+    await assertFails(react('eve'));
+  });
+
+  it('rejects a reaction signed with someone else’s uid', async () => {
+    await seedRoom('REACT2', live());
+    await assertFails(
+      updateDoc(doc(as('alice'), 'rooms', 'REACT2'), {
+        reaction: { uid: 'bob', emoji: '👏', at: serverTimestamp(), n: 1 },
+      }),
+    );
+  });
+
+  it('rejects an emoji that is not on the list', async () => {
+    await seedRoom('REACT2', live());
+    await assertFails(react('alice', { emoji: '🖕' }));
+    await assertFails(react('alice', { emoji: 'gg' }));
+  });
+
+  it('rejects a client timestamp or a stale counter', async () => {
+    await seedRoom('REACT2', live());
+    await assertFails(react('alice', { at: Timestamp.now() }));
+    await assertFails(react('alice', { n: 2 }));
+  });
+
+  it('rejects extra fields inside the reaction', async () => {
+    await seedRoom('REACT2', live());
+    await assertFails(react('alice', { text: 'nice one' }));
+  });
+
+  it('holds everyone to the cooldown, whoever reacted last', async () => {
+    await seedRoom(
+      'REACT2',
+      live({ reaction: { uid: 'alice', emoji: '👏', at: Timestamp.now(), n: 1 } }),
+    );
+    await assertFails(react('bob', { n: 2 }));
+    await seedRoom(
+      'REACT2',
+      live({ reaction: { uid: 'alice', emoji: '👏', at: ago(4000), n: 1 } }),
+    );
+    await assertSucceeds(react('bob', { n: 2 }));
+  });
+
+  it('refuses to smuggle another change along with a reaction', async () => {
+    await seedRoom('REACT2', live());
+    await assertFails(
+      updateDoc(doc(as('alice'), 'rooms', 'REACT2'), {
+        reaction: { uid: 'alice', emoji: '👏', at: serverTimestamp(), n: 1 },
+        whiteMs: 999_000,
+      }),
+    );
+  });
+
+  it('only reacts while the game is live', async () => {
+    await seedRoom('REACT2', live({ status: 'waiting', startedAt: null }));
+    await assertFails(react('alice'));
+    await seedRoom('REACT2', live({ status: 'finished', result: 'white', reason: 'resign' }));
+    await assertFails(react('alice'));
+  });
+
+  it('is readable by anyone who can read the room', async () => {
+    await seedRoom(
+      'REACT2',
+      live({ reaction: { uid: 'alice', emoji: '🔥', at: Timestamp.now(), n: 1 } }),
+    );
+    await assertSucceeds(getDoc(doc(anon(), 'rooms', 'REACT2')));
   });
 });

@@ -71,6 +71,15 @@ export type GameEndReason =
   | 'agreement'
   | 'aborted';
 
+/** The last reaction either player sent, kept on the room so it reaches spectators too. */
+export interface Reaction {
+  uid: string;
+  emoji: string;
+  at: Timestamp;
+  /** Counts up with every reaction, so repeats of the same emoji are still new. */
+  n: number;
+}
+
 export type RoomType = 'code' | 'challenge' | 'rematch';
 export type RoomStatus = 'waiting' | 'live' | 'finished' | 'cancelled' | 'declined';
 
@@ -121,6 +130,8 @@ export interface Room {
   rematchOf: string | null;
   /** Code of the rematch room created after this game. */
   rematch: string | null;
+  /** The last reaction either player sent, if any. */
+  reaction: Reaction | null;
 }
 
 export type RoomState =

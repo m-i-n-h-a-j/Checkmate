@@ -11,7 +11,8 @@ export type Sound =
   | 'shatter'
   | 'boom'
   | 'freeze'
-  | 'promote';
+  | 'promote'
+  | 'pop';
 
 interface Note {
   /** Hz, or [from, to] for a slide. For noise, the low-pass cutoff. */
@@ -56,6 +57,10 @@ const SOUNDS: Record<Sound, Note[]> = {
     { freq: 523, at: 0.16, length: 0.2, wave: 'triangle', volume: 0.4 },
   ],
   tick: [{ freq: 1400, at: 0, length: 0.03, wave: 'square', volume: 0.12 }],
+  pop: [
+    { freq: [520, 1180], at: 0, length: 0.07, wave: 'triangle', volume: 0.45 },
+    { freq: 1568, at: 0.07, length: 0.09, wave: 'triangle', volume: 0.3 },
+  ],
   shatter: [
     { freq: [6000, 800], at: 0, length: 0.35, noise: true, volume: 0.6 },
     { freq: [320, 90], at: 0, length: 0.22, wave: 'square', volume: 0.25 },

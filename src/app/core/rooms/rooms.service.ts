@@ -44,6 +44,7 @@ const NEW_GAME = {
   whiteRatingDiff: null,
   blackRatingDiff: null,
   rematch: null,
+  reaction: null,
 } satisfies Partial<Room>;
 
 /** Defaults for rooms created before games shipped. */

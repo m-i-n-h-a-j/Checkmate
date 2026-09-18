@@ -26,6 +26,8 @@
         [ratingDiff]="top.ratingDiff"
       />
 
+      <app-reaction-fx />
+
       <div class="board-stage relative">
         <app-chessboard
           [fen]="position().fen"
@@ -80,6 +82,9 @@
           <span class="text-sm text-ink-dim">{{ speed().label }} · {{ speed().speed }}</span>
         </div>
         <div class="flex shrink-0 gap-1.5">
+          @if (live() && mySide()) {
+            <app-reaction-picker (picked)="react($event)" />
+          }
           <button
             type="button"
             class="btn btn-ghost btn-sm size-10 p-0"
@@ -160,4 +165,5 @@
   </div>
 
   <p class="sr-only" aria-live="polite">{{ moments.announcement() }}</p>
+  <p class="sr-only" aria-live="polite">{{ reactionNote() }}</p>
 }
