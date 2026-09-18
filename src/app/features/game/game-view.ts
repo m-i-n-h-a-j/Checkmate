@@ -10,11 +10,12 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { MusicService } from '../../core/audio/music.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { ChessReplay, PlayedMove } from '../../core/game/chess-game';
 import { FREE_PLIES, flaggedSide, readClocks } from '../../core/game/clock';
 import { GameService } from '../../core/game/game.service';
-import { opposite, parseUci } from '../../core/game/notation';
+import { materialLeft, opposite, parseUci } from '../../core/game/notation';
 import { ServerClock } from '../../core/game/server-clock.service';
 import { SoundService } from '../../core/game/sound.service';
 import { timeControlOption } from '../../core/game/time-controls';
@@ -50,6 +51,7 @@ export class GameView {
   private readonly document = inject(DOCUMENT);
   protected readonly sounds = inject(SoundService);
   protected readonly effects = inject(EffectsService);
+  protected readonly music = inject(MusicService);
 
   readonly room = input.required<Room>();
   /** 'play' lets a seated player move; 'watch' always spectates. */
@@ -181,7 +183,25 @@ export class GameView {
       );
     });
 
-    destroyRef.onDestroy(() => (this.claiming = true));
+    // Music follows the shape of the game: the endgame loop, then the clock.
+    effect(() => {
+      const room = this.room();
+      const clocks = this.clocks();
+      const position = this.position();
+      const side = this.mySide();
+      untracked(() =>
+        this.music.scene({
+          live: room.status === 'live',
+          material: materialLeft(position.fen),
+          timeLeftMs: side ? clocks[side] : Math.min(clocks.white, clocks.black),
+        }),
+      );
+    });
+
+    destroyRef.onDestroy(() => {
+      this.claiming = true;
+      this.music.stop();
+    });
   }
 
   protected onBoardMove(move: BoardMove): void {

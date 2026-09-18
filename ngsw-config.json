@@ -18,6 +18,14 @@
       }
     },
     {
+      "name": "music",
+      "installMode": "lazy",
+      "updateMode": "lazy",
+      "resources": {
+        "files": ["/audio/*.opus", "/audio/*.m4a"]
+      }
+    },
+    {
       "name": "engine",
       "installMode": "lazy",
       "updateMode": "lazy",

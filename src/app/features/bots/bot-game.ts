@@ -28,7 +28,8 @@ import { BOTS, Bot, botById, botPlayer } from '../../core/bots/bots';
 import { HINT_STRENGTH, StockfishService } from '../../core/bots/stockfish.service';
 import { ChessReplay, PlayedMove } from '../../core/game/chess-game';
 import { FREE_PLIES } from '../../core/game/clock';
-import { hasBareKing, opposite, parseUci } from '../../core/game/notation';
+import { hasBareKing, materialLeft, opposite, parseUci } from '../../core/game/notation';
+import { MusicService } from '../../core/audio/music.service';
 import { SoundService } from '../../core/game/sound.service';
 import { timeControlOption } from '../../core/game/time-controls';
 import { PlayerSnapshot, Side } from '../../core/models';
@@ -69,6 +70,7 @@ export class BotGamePage {
   protected readonly engine = inject(StockfishService);
   protected readonly sounds = inject(SoundService);
   protected readonly effects = inject(EffectsService);
+  protected readonly music = inject(MusicService);
 
   private readonly board = viewChild(Chessboard);
   private readonly fx = viewChild(BoardFx);
@@ -214,6 +216,22 @@ export class BotGamePage {
       const ready = this.engine.status() === 'ready';
       if (!game || game.status !== 'live' || turn !== this.botSide() || !ready) return;
       untracked(() => void this.botMove(game.moves.length));
+    });
+
+    // Music follows the shape of the game: the endgame loop, then the clock.
+    effect(() => {
+      const game = this.game();
+      const clocks = this.clocks();
+      const position = this.position();
+      const side = this.mySide();
+      if (!game) return;
+      untracked(() =>
+        this.music.scene({
+          live: game.status === 'live',
+          material: materialLeft(position.fen),
+          timeLeftMs: game.timeControl ? clocks[side] : null,
+        }),
+      );
     });
 
     effect(() => {

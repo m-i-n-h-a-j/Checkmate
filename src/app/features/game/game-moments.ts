@@ -1,4 +1,5 @@
 import { DOCUMENT, DestroyRef, inject, signal } from '@angular/core';
+import { MusicService } from '../../core/audio/music.service';
 import { Position } from '../../core/game/chess-game';
 import { opposite } from '../../core/game/notation';
 import { SoundService } from '../../core/game/sound.service';
@@ -33,6 +34,7 @@ export interface MomentsOptions {
  */
 export class GameMoments {
   private readonly sounds = inject(SoundService);
+  private readonly music = inject(MusicService);
   private readonly document = inject(DOCUMENT);
   private readonly timers: ReturnType<typeof setTimeout>[] = [];
   private previous: { plies: number; status: MomentsState['status'] } | null = null;
@@ -106,6 +108,7 @@ export class GameMoments {
 
   /** Forgets the last state, e.g. when a different game starts in the same view. */
   reset(): void {
+    this.music.stop();
     this.timers.forEach(clearTimeout);
     this.timers.length = 0;
     this.previous = null;
@@ -135,6 +138,7 @@ export class GameMoments {
   /** Plays the ending cinematic, then reveals the result. */
   private endGame(state: MomentsState): void {
     const finale = this.finaleOf(state);
+    this.playEndingMusic(state.result);
     if (finale) this.announcement.set(`Game over. ${finale.subtitle}.`);
     const duration = finale ? (this.options.fx()?.finale(finale.kind, finale) ?? 0) : 0;
     this.revealing.set(duration > 0);
@@ -151,6 +155,16 @@ export class GameMoments {
       this.focusResult.set(this.options.mySide() !== null);
       this.celebrate(state.result);
     }, duration);
+  }
+
+  /** A decisive game gets its sting; draws and aborted games just stop the music. */
+  private playEndingMusic(result: GameResult | null): void {
+    const side = this.options.mySide();
+    if (result === 'white' || result === 'black') {
+      this.music.play(!side || result === side ? 'win' : 'loss');
+    } else {
+      this.music.stop();
+    }
   }
 
   private finaleOf(

@@ -16,6 +16,8 @@ export type IconName =
   | 'sparkles'
   | 'sparkles-off'
   | 'bot'
+  | 'music'
+  | 'music-off'
   | 'pause'
   | 'play-video';
 
@@ -82,6 +84,17 @@ export type IconName =
           <path
             d="m10 4 1.8 5.2L17 11l-5.2 1.8L10 18l-1.8-5.2L3 11l5.2-1.8L10 4ZM19 2v4M17 4h4M19 17v4M17 19h4"
           />
+        }
+        @case ('music') {
+          <path d="M9 18V5l11-2v13" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="17" cy="16" r="3" />
+        }
+        @case ('music-off') {
+          <path d="M9 18V9m0-4V5l11-2v4m0 4v6" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="17" cy="16" r="3" />
+          <path d="M3 3l18 18" />
         }
         @case ('pause') {
           <path d="M8 5v14M16 5v14" />

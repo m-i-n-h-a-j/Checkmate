@@ -1,5 +1,5 @@
 import { ChessReplay } from './chess-game';
-import { START_FEN, hasBareKing, parseUci, sideToMove } from './notation';
+import { START_FEN, hasBareKing, materialLeft, parseUci, sideToMove } from './notation';
 
 describe('ChessReplay', () => {
   it('starts from the initial position with twenty legal moves', () => {
@@ -86,6 +86,12 @@ describe('ChessReplay', () => {
 });
 
 describe('chess helpers', () => {
+  it('counts the material left on the board', () => {
+    expect(materialLeft(START_FEN)).toBe(78);
+    expect(materialLeft('8/8/8/4k3/8/8/4K3/8 w - - 0 1')).toBe(0);
+    expect(materialLeft('8/8/8/3qk3/8/8/4K1R1/8 w - - 0 1')).toBe(14);
+  });
+
   it('parses UCI moves', () => {
     expect(parseUci('e7e8q')).toEqual({ from: 'e7', to: 'e8', promotion: 'q' });
     expect(parseUci('e2e4')?.promotion).toBeUndefined();

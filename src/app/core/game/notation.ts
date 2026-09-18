@@ -39,3 +39,14 @@ export function hasBareKing(fen: string, side: Side): boolean {
   const pieces = side === 'white' ? /[PNBRQ]/ : /[pnbrq]/;
   return !pieces.test(board);
 }
+
+const PIECE_VALUES: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+
+/** Material left on the board in pawns, both sides together. A full board is 78. */
+export function materialLeft(fen: string): number {
+  let total = 0;
+  for (const square of fen.split(' ')[0]) {
+    total += PIECE_VALUES[square.toLowerCase()] ?? 0;
+  }
+  return total;
+}

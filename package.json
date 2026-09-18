@@ -11,7 +11,8 @@
     "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes",
     "emulators": "firebase emulators:start --only auth,firestore --project demo-checkmate",
     "start:emulated": "ng serve --configuration emulator",
-    "video:sky": "node scripts/encode-sky-video.mjs"
+    "video:sky": "node scripts/encode-sky-video.mjs",
+    "audio:music": "node scripts/encode-music.mjs"
   },
   "private": true,
   "packageManager": "npm@12.0.2",
