@@ -52,11 +52,27 @@ if (!Number.isFinite(duration)) {
 console.log(`Source: ${input} (${duration.toFixed(2)} s)`);
 mkdirSync(OUT, { recursive: true });
 
-// Cylinder wrap. The source is padded to twice its height so its bottom edge sits at elevation 0.
-// With a 77.5° vertical view, looking up 25.7° puts elevation 0 at 80% of the frame height.
+// Cylinder wrap. The source is padded to twice its height so its bottom edge sits at elevation 0,
+// which means it covers elevations up to IV_FOV / 2 and nothing above that.
+const IH_FOV = 160;
+const IV_FOV = 115;
+const HORIZON = 0.8; // where elevation 0 lands in the frame, matching the arcade horizon
+// The view has to stay inside the source: looking up by PITCH with V_FOV / 2 above the center must
+// not pass IV_FOV / 2, or the top center of the frame samples nothing and comes out black.
+const V_FOV = 66;
+const degrees = (radians) => (radians * 180) / Math.PI;
+const tanV = Math.tan((V_FOV / 2 / 180) * Math.PI);
+const PITCH = degrees(Math.atan((2 * HORIZON - 1) * tanV));
+const H_FOV = 2 * degrees(Math.atan((tanV * 16) / 9));
+if (PITCH + V_FOV / 2 > IV_FOV / 2) {
+  console.error(`The view reaches ${(PITCH + V_FOV / 2).toFixed(1)}°, past the source's ${IV_FOV / 2}°.`);
+  process.exit(1);
+}
+console.log(`Wrap: ${V_FOV}° x ${H_FOV.toFixed(1)}° looking up ${PITCH.toFixed(1)}°`);
+
 const wrap = [
   'pad=1920:2160:0:0:black',
-  'v360=input=cylindrical:output=flat:ih_fov=160:iv_fov=115:h_fov=110:v_fov=77.5:pitch=25.7:w=1920:h=1080:interp=lanczos',
+  `v360=input=cylindrical:output=flat:ih_fov=${IH_FOV}:iv_fov=${IV_FOV}:h_fov=${H_FOV.toFixed(3)}:v_fov=${V_FOV}:pitch=${PITCH.toFixed(3)}:w=1920:h=1080:interp=lanczos`,
   'format=gbrp',
   `colorchannelmixer=rr=${DIM}:gg=${DIM}:bb=${DIM}`,
   'format=yuv420p',

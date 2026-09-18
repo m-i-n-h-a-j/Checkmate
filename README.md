@@ -19,6 +19,7 @@ A live chess arcade. Players sign in with Google, add friends, and play real-tim
 | Ratings      | Elo (K = 32). The write that ends a game updates both players' stats in the same transaction.                                                                                                                                                                                                                                                                                                                                                         |
 | Spectating   | Live arena cards show each game's position. The watch page follows moves and clocks live.                                                                                                                                                                                                                                                                                                                                                             |
 | Bots         | Eight arcade bots from ≈250 (Pawnbot) to ≈3000 (The Final Boss) at `/bots`, no sign-in needed. Pick a color and an optional clock. Hints (gold arrow), undo, resign, and "Play the next bot" after a win. Games run on the device only: never stored in Firestore, never in the Live arena, never rated. Wins, losses and draws per bot are kept in the browser, and an unfinished game resumes after a reload. Clocks pause while the tab is hidden. |
+| Music        | Endgame tension, time trouble, and win or loss stings, mixed under the chiptune sounds. On by default, switchable per player.                                                                                                                                                                                                                                                                                                                         |
 | Home sky     | A slow-motion Blender render loops as the home page sky, wrapped around the horizon like a curved cinema screen, while the neon floor keeps rolling below. Each device gets a 16:9 or 4:5 crop at 1080p or 720p, sized to its screen and connection. Light effects mode, reduced motion and data saver show a still frame. It pauses while scrolled away or with the pause button.                                                                    |
 | Effects      | 3D moments over the board: shattering captures ("QUEEN DOWN!"), promotions ("QUEENED!"), check stamps, a toppling king on checkmate, frozen stalemates, K.O. on resign. "Heavy effects" in the game panel or player menu switches to a light mode (also stops the rolling floor, sign lights and background blurs). Reduced-motion users never see them.                                                                                              |
 | Rules        | `firestore.rules` enforces unique usernames, friends-only challenges, seat ownership, legal room state changes, turn order, append-only moves, server-time clocks, honest results and Elo-checked stats.                                                                                                                                                                                                                                              |
@@ -112,18 +113,32 @@ public/engine/ Stockfish 19 lite single-threaded build (JS worker + 1.8 MB WebAs
 tests/         Firestore security rules tests
 ```
 
+## Music
+
+Four cues play at the moments that carry a game, over the chiptune blips in `sound.service.ts`:
+
+| Cue            | When it plays                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------------- |
+| `tension`      | The board is down to an endgame (24 pawns of material or less), looping until something changes |
+| `time`         | Your clock drops under 30 seconds, whatever is left on the board                                |
+| `win` / `loss` | A decisive ending, over the finale cinematic                                                    |
+
+Music is on by default, has its own button in the game toolbars, and muting all sound silences it too. Draws end in silence. Tracks are only fetched once a game first needs them, and the service worker keeps them for offline bot games.
+
+The source recordings aren't in the repo. `npm run audio:music -- "D:\Videos\Musics"` rebuilds `public/audio/` from them: each cue is cut to the part the game uses, normalized, downmixed to mono and encoded as Opus at 32 kbps (85-222 kB each), with an AAC copy for browsers without Ogg/Opus. The two loops are crossfaded end to start so they repeat without a seam.
+
 ## Home sky video
 
 The source render isn't in the repo (FFV1, 1.5 GB). `npm run video:sky -- "D:\Videos\chess-vid.mkv"` rebuilds `public/video/` from it with ffmpeg. The cylinder wrap, the dimming and the loop's dip to black are baked into the files, so the page only plays a masked `<video>`, decoded in hardware:
 
 | File                | Size    | Who gets it                                                        |
 | ------------------- | ------- | ------------------------------------------------------------------ |
-| `sky-wide-1080.mp4` | 19.7 MB | Laptops and desktops where the sky is over ~820 device pixels tall |
-| `sky-wide-720.mp4`  | 9.5 MB  | Smaller landscape screens and slow connections                     |
-| `sky-tall-1080.mp4` | 11.1 MB | Phones and portrait tablets (4:5 center crop)                      |
-| `sky-tall-720.mp4`  | 5.5 MB  | Small portrait screens and slow connections                        |
+| `sky-wide-1080.mp4` | 20.9 MB | Laptops and desktops where the sky is over ~820 device pixels tall |
+| `sky-wide-720.mp4`  | 10.1 MB | Smaller landscape screens and slow connections                     |
+| `sky-tall-1080.mp4` | 11.7 MB | Phones and portrait tablets (4:5 center crop)                      |
+| `sky-tall-720.mp4`  | 5.8 MB  | Small portrait screens and slow connections                        |
 
-All are AVC (H.264 High, 8-bit), preset slow, CRF 27 at 1080p and 28 at 720p. The choice is made once in `src/app/features/home/home-sky.ts`, and switches crops when a device rotates. The videos are streamed, not cached by the service worker; the `sky-*.jpg` still frames are.
+All are AVC (H.264 High, 8-bit), preset slow, CRF 27 at 1080p and 28 at 720p. The wrap geometry is derived in the script: the horizon sits 80% down the frame, and the view stays inside the source’s vertical field of view, so the top of the frame never samples past the render. The choice is made once in `src/app/features/home/home-sky.ts`, and switches crops when a device rotates. The videos are streamed, not cached by the service worker; the `sky-*.jpg` still frames are.
 
 ## App icons
 
